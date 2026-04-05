@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>npm supply chain risk</title>
-  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <title>npm packages blast radius</title>
+  <script defer src="https://cloud.umami.is/script.js" data-website-id="d9d65e95-1419-4518-87e8-ba536fcb78eb"></script>
+  <script src="lib/d3.v7.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -25,6 +26,17 @@
       display: flex;
       flex-direction: column;
       z-index: 10;
+    }
+    #panel-title {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid #d5d8dc;
+      background: #ffffff;
+    }
+    #panel-title h1 {
+      font-size: 13px;
+      font-weight: 700;
+      color: #2c3e50;
+      letter-spacing: -0.01em;
     }
     #threat-panel header {
       padding: 14px 16px;
@@ -152,10 +164,10 @@
     }
     #dl-json-wrap a { font-size: 11px; }
 
-    /* ── EXPLAINER BOX (separate from stats) ── */
+    /* ── EXPLAINER BOX (beside stats panel) ── */
     #explainer-box {
       position: absolute; top: 16px; right: 260px;
-      width: 280px;
+      width: 250px;
       background: rgba(255,255,255,0.97);
       border: 1px solid #d5d8dc;
       border-radius: 6px;
@@ -165,9 +177,27 @@
       font-size: 11px;
     }
     #explainer-box.visible { display: block; }
+
+    /* narrow screens: stack explainer below stats */
+    @media (max-width: 900px) {
+      #stats-panel {
+        max-height: 45vh;
+        overflow-y: auto;
+      }
+      #explainer-box {
+        right: 16px; top: auto; bottom: 16px;
+        width: 230px;
+        max-height: 40vh;
+        overflow-y: auto;
+      }
+    }
     #explainer-box h3 {
-      font-size: 10px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 0.1em; color: #5d6d7e; margin-bottom: 10px;
+      font-size: 10px; font-weight: 600;
+      letter-spacing: 0.02em; color: #5d6d7e; margin-bottom: 10px;
+    }
+    #explainer-box h3 code {
+      font-family: monospace; font-size: 11px; font-weight: 700;
+      color: #2c3e50; background: #ecf0f1; padding: 1px 4px; border-radius: 3px;
     }
     .exp-section { margin-bottom: 10px; }
     .exp-section:last-child { margin-bottom: 0; }
@@ -203,6 +233,9 @@
 <body>
 
 <div id="threat-panel">
+  <div id="panel-title">
+    <h1>Blast Radius</h1>
+  </div>
   <header>
     <h1>Packages</h1>
     <p id="pkg-count">Loading…</p>
@@ -267,6 +300,10 @@
     </div>
   </div>
 
+</div>
+
+<div id="footer" style="position:fixed;bottom:6px;right:12px;font-size:9px;color:#bdc3c7;z-index:5;">
+  Analytics by <a href="https://umami.is" target="_blank" rel="noopener" style="color:#95a5a6;text-decoration:none;">Umami</a> · privacy-friendly, no cookies
 </div>
 
 <script>
@@ -643,7 +680,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
         return;
       }
       const ex = examples[0]
-        ? `<span class="exp-example" style="background:${color}12;color:${color}">${examples[0].name}: ${examples[0].req}</span>`
+        ? `<div style="margin-top:4px;font-size:10px;color:#5d6d7e;">example: <span class="exp-example" style="background:${color}12;color:${color}">"${id}": "${examples[0].req}"</span> <span style="font-size:9px;color:#95a5a6;">in ${examples[0].name}</span></div>`
         : '';
       el.innerHTML = `
         <div class="exp-header"><span class="exp-dot" style="background:${color}"></span><span style="color:${color}">${label}</span> <span style="color:#95a5a6;font-weight:400;font-size:10px;">(${count})</span></div>
@@ -653,22 +690,23 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
     renderSection(
       document.getElementById('exp-auto'), AUTO_COLOR, 'Auto-pull', 
-      'Uses ^, ~, or >= ranges. A compromised version gets pulled automatically on next <code>npm install</code>.', 
+      'Their <code>package.json</code> has a range like <code>^1.4.0</code> or <code>~1.4.0</code>. Running <code>npm i</code> will silently pull in the compromised version.', 
       autoEx, autoCount
     );
     renderSection(
       document.getElementById('exp-needs'), NEED_COLOR, 'Needs update',
-      'In the dependency chain but behind a stricter range. Requires a deliberate <code>npm update</code> to pull in.',
+      'In the dependency chain but behind a stricter range. Won\'t auto-pull, but a deliberate <code>npm update</code> would bring it in.',
       needEx, needCount
     );
     renderSection(
       document.getElementById('exp-pinned'), PIN_COLOR, 'Pinned',
-      'Exact version pin. Safe unless someone manually bumps the version.',
+      'Their <code>package.json</code> has an exact version like <code>1.4.0</code>. Safe unless someone manually bumps it.',
       pinEx, pinCount
     );
 
-    document.getElementById('explainer-box').classList.toggle('visible', cascade.size > 0);
-    document.getElementById('exp-heading').textContent = `What if ${id} is compromised?`;
+    const expBox = document.getElementById('explainer-box');
+    expBox.classList.toggle('visible', cascade.size > 0);
+    document.getElementById('exp-heading').innerHTML = `What if <code>${id}</code> is compromised?`;
   }
 
   // ── QUERY PARAM SELECTION ────────────────────────────────────────────────

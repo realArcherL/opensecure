@@ -31,6 +31,10 @@ Run in order: `build > seed > fetch > graph > viz`
 
 - [The Hidden Blast Radius of the Axios Compromise](https://socket.dev/blog/hidden-blast-radius-of-the-axios-compromise) - Socket
 
+## Analytics
+
+This site uses [Umami](https://umami.is) for privacy-friendly, cookieless analytics. No personal data is collected.
+
 ## License
 
 MIT

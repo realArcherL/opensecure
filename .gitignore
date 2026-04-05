@@ -1,4 +1,5 @@
 dist
+lib
 plan.md
 TEST.http
 node_modules
@@ -33,3 +34,4 @@ plan.md
 TEST.http
 data
 data-*
+lib
