@@ -8,7 +8,7 @@ interface RawPackage {
   dependents: { direct?: number; indirect?: number; total?: number };
   dependencies: {
     nodes: Array<{ name: string; version: string }>;
-    edges: Array<{ from: string; to: string }>;
+    edges: Array<{ from: string; to: string; requirement: string }>;
   };
 }
 
@@ -20,8 +20,10 @@ const raws: RawPackage[] = files.map(f =>
 const topSet = new Set(raws.map(r => r.name));
 
 const packages: Record<string, { version: string; weeklyDownloads: number; totalDependents: number }> = {};
-const dependsOn: Record<string, string[]> = {};
-const isDependencyOf: Record<string, string[]> = {};
+// edge: from depends on `to` via `requirement` semver range
+const dependsOn: Record<string, Array<{ name: string; requirement: string }>> = {};
+// reverse: `pkg` is pulled in by these packages, with the range they use
+const isDependencyOf: Record<string, Array<{ name: string; requirement: string }>> = {};
 
 for (const pkg of raws) {
   packages[pkg.name] = {
@@ -30,16 +32,21 @@ for (const pkg of raws) {
     totalDependents: pkg.dependents?.total ?? 0,
   };
 
-  const deps = pkg.dependencies.nodes
-    .map(n => n.name)
-    .filter(n => n !== pkg.name && topSet.has(n));
+  // keep only intra-set edges, deduplicate by `to` name
+  const seen = new Set<string>();
+  const edges: Array<{ name: string; requirement: string }> = [];
+  for (const e of pkg.dependencies.edges) {
+    if (e.from === pkg.name && topSet.has(e.to) && !seen.has(e.to)) {
+      seen.add(e.to);
+      edges.push({ name: e.to, requirement: e.requirement ?? '*' });
+    }
+  }
+  dependsOn[pkg.name] = edges;
 
-  dependsOn[pkg.name] = [...new Set(deps)];
-
-  for (const dep of dependsOn[pkg.name]) {
+  for (const { name: dep, requirement } of edges) {
     if (!isDependencyOf[dep]) isDependencyOf[dep] = [];
-    if (!isDependencyOf[dep].includes(pkg.name)) {
-      isDependencyOf[dep].push(pkg.name);
+    if (!isDependencyOf[dep].find(e => e.name === pkg.name)) {
+      isDependencyOf[dep].push({ name: pkg.name, requirement });
     }
   }
 }

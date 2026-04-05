@@ -28,7 +28,7 @@ export async function getDependencies(name: string, version: string) {
   if (!res.ok) throw new Error(`getDependencies ${name}@${version}: ${res.status}`);
   return res.json() as Promise<{
     nodes: Array<{ versionKey: { name: string; version: string } }>;
-    edges: Array<{ fromNode: number; toNode: number }>;
+    edges: Array<{ fromNode: number; toNode: number; requirement?: string }>;
   }>;
 }
 

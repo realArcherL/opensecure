@@ -50,6 +50,7 @@ for (let i = 0; i < packages.length; i++) {
     const edges = depsData.edges.map(e => ({
       from: depsData.nodes[e.fromNode].versionKey.name,
       to: depsData.nodes[e.toNode].versionKey.name,
+      requirement: e.requirement ?? '*',
     }));
 
     const output = {

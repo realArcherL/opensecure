@@ -1,33 +1,49 @@
 import { readFileSync } from 'node:fs';
 import { log } from './lib/log.js';
 
+interface Edge { name: string; requirement: string; }
+
 interface Graph {
   packages: Record<string, { version: string; weeklyDownloads: number; totalDependents: number }>;
-  isDependencyOf: Record<string, string[]>;
+  isDependencyOf: Record<string, Edge[]>;
+}
+
+// a range is "auto" if it allows new versions without manual intervention
+function isAutoRange(req: string): boolean {
+  const r = req.trim();
+  if (r === '*' || r === '' || r === 'latest') return true;
+  if (r.startsWith('^') || r.startsWith('~') || r.startsWith('>')) return true;
+  return false;
 }
 
 export function simulate(pkg: string, graph: Graph) {
   const reverse = graph.isDependencyOf;
-  const infected = new Map<string, number>(); // name -> depth
-  const queue: Array<[string, number]> = [[pkg, 0]];
+  // infected: name -> { depth, auto }
+  const infected = new Map<string, { depth: number; auto: boolean }>();
+  const queue: Array<[string, number, boolean]> = [[pkg, 0, true]];
 
   while (queue.length > 0) {
-    const [current, depth] = queue.shift()!;
+    const [current, depth, parentAuto] = queue.shift()!;
     if (infected.has(current)) continue;
-    infected.set(current, depth);
-    for (const dependent of (reverse[current] ?? [])) {
-      if (!infected.has(dependent)) queue.push([dependent, depth + 1]);
+    infected.set(current, { depth, auto: parentAuto });
+    for (const edge of (reverse[current] ?? [])) {
+      if (!infected.has(edge.name)) {
+        // auto only if this edge is auto AND the parent chain was auto
+        queue.push([edge.name, depth + 1, parentAuto && isAutoRange(edge.requirement)]);
+      }
     }
   }
 
   infected.delete(pkg);
 
-  // weekly downloads of compromised pkg + all cascade packages = real-world reach
-  const totalDownloads = [pkg, ...infected.keys()].reduce((sum, name) => {
-    return sum + (graph.packages[name]?.weeklyDownloads ?? 0);
-  }, 0);
+  const totalDownloads = [pkg, ...infected.keys()].reduce((sum, name) =>
+    sum + (graph.packages[name]?.weeklyDownloads ?? 0), 0);
 
-  return { infected, maxDepth: Math.max(0, ...[...infected.values()]), totalDownloads };
+  const maxDepth = Math.max(0, ...[...infected.values()].map(v => v.depth));
+  const autoExposed   = [...infected.values()].filter(v => v.auto).length;
+  const manualExposed = infected.size - autoExposed;
+
+  return { infected, maxDepth, totalDownloads, autoExposed, manualExposed };
 }
 
 const graph: Graph = JSON.parse(readFileSync('data/graph.json', 'utf-8'));
@@ -40,15 +56,18 @@ if (!arg) {
 
 if (arg === '--all') {
   const results = Object.keys(graph.packages).map(pkg => {
-    const { infected, totalDownloads } = simulate(pkg, graph);
-    return { pkg, count: infected.size, totalDownloads };
+    const { infected, totalDownloads, autoExposed } = simulate(pkg, graph);
+    return { pkg, count: infected.size, autoExposed, totalDownloads };
   });
 
-  results.sort((a, b) => b.count - a.count);
+  results.sort((a, b) => b.count - a.count || b.totalDownloads - a.totalDownloads);
 
   console.log('\nWORST CASE SCENARIOS:');
   for (const [i, r] of results.entries()) {
-    console.log(`${i + 1}. ${r.pkg.padEnd(20)} → infects ${r.count}/${Object.keys(graph.packages).length} (${r.totalDownloads.toLocaleString()} dependents affected)`);
+    console.log(
+      `${i + 1}. ${r.pkg.padEnd(22)} → ${r.count}/${Object.keys(graph.packages).length} cascade` +
+      ` (${r.autoExposed} auto-pull, ${r.totalDownloads.toLocaleString()} dl/wk)`
+    );
   }
 } else {
   if (!graph.packages[arg]) {
@@ -56,18 +75,19 @@ if (arg === '--all') {
     process.exit(1);
   }
 
-  const { infected, maxDepth, totalDownloads } = simulate(arg, graph);
+  const { infected, maxDepth, totalDownloads, autoExposed, manualExposed } = simulate(arg, graph);
 
   log.info(`Package: ${arg}`);
-  log.info(`Directly infects: ${[...infected].filter(([,d]) => d === 1).length}`);
-  log.info(`Total cascade: ${infected.size}/${Object.keys(graph.packages).length}`);
+  log.info(`Cascade: ${infected.size}/${Object.keys(graph.packages).length} packages`);
+  log.info(`Auto-pull (^/~/>=): ${autoExposed} packages — receive malicious version on next install`);
+  log.info(`Manual exposure:    ${manualExposed} packages — require deliberate update`);
   log.info(`Max depth: ${maxDepth} hops`);
-  log.info(`Weekly downloads at risk (cascade total): ${totalDownloads.toLocaleString()}`);
+  log.info(`Weekly downloads at risk: ${totalDownloads.toLocaleString()}`);
 
   if (infected.size > 0) {
-    console.log('\nInfected packages:');
-    for (const [name, depth] of [...infected].sort((a, b) => a[1] - b[1])) {
-      console.log(`  hop ${depth}: ${name}`);
+    console.log('\nCascade:');
+    for (const [name, { depth, auto }] of [...infected].sort((a, b) => a[1].depth - b[1].depth)) {
+      console.log(`  hop ${depth}: ${name.padEnd(25)} ${auto ? '[auto-pull]' : '[manual]'}`);
     }
   }
 }
