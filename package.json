@@ -14,7 +14,9 @@
     "simulate:all": "node dist/simulate.js --all",
     "postinstall": "mkdir -p lib && cp node_modules/d3/dist/d3.min.js lib/d3.v7.min.js",
     "viz": "npx serve . -p 3000",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test test/exposure-type.test.mjs test/simulate.test.mjs",
+    "test:api": "node --test test/verify-api.test.mjs",
+    "test:all": "node --test test/*.test.mjs"
   },
   "keywords": [],
   "author": "",

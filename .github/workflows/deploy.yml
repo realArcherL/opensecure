@@ -56,6 +56,13 @@ jobs:
       - name: Build graph
         run: npm run graph
 
+      # ── 5b. Cache graph.json so the UI-only workflow can reuse it ──────────
+      - name: Cache graph data for UI deploys
+        uses: actions/cache/save@v4
+        with:
+          path: data/graph.json
+          key: graph-data-${{ github.run_id }}
+
       # ── 6. Assemble deploy artifact ────────────────────────────────────────
       #    Only ship what the browser needs — nothing else.
       - name: Prepare site directory
