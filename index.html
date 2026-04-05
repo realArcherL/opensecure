@@ -232,6 +232,34 @@
       font-size: 10px; color: #bdc3c7; font-style: italic;
     }
 
+    /* ── SCOPE BADGE ── */
+    #scope-badge {
+      position: fixed; bottom: 12px; left: 254px;
+      background: rgba(243, 156, 18, 0.7); color: #fff;
+      font-size: 10px; font-weight: 600;
+      padding: 5px 10px; border-radius: 4px;
+      cursor: pointer; z-index: 20;
+      display: flex; align-items: center; gap: 5px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      transition: background 0.15s;
+    }
+    #scope-badge:hover { background: #e67e22; }
+    #scope-popup {
+      position: fixed; bottom: 42px; left: 254px;
+      width: 280px;
+      background: rgba(255,255,255,0.98);
+      border: 1px solid #d5d8dc;
+      border-radius: 6px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      padding: 14px;
+      display: none; z-index: 20;
+      font-size: 10px; color: #5d6d7e; line-height: 1.7;
+    }
+    #scope-popup.visible { display: block; }
+    #scope-popup strong { color: #2c3e50; font-size: 11px; display: block; margin-bottom: 6px; }
+    #scope-popup ul { margin: 0; padding-left: 14px; }
+    #scope-popup li { margin-bottom: 4px; }
+
     /* ── PULSE ANIMATION ── */
     @keyframes pulse-purple {
       0%, 100% { opacity: 0.5; }
@@ -310,11 +338,19 @@
     <div id="exp-auto" class="exp-section"></div>
     <div id="exp-needs" class="exp-section"></div>
     <div id="exp-pinned" class="exp-section"></div>
-    <div id="exp-scope" style="margin-top:10px;padding-top:8px;border-top:1px solid #ecf0f1;font-size:9px;color:#95a5a6;line-height:1.5;">
-      ⚠️ Within top-<span id="exp-scope-count"></span> popular npm packages only. Real blast radius extends beyond this graph.
-    </div>
   </div>
 
+</div>
+
+<div id="scope-badge" title="Scope & Limitations">⚠️ Scope & Limitations</div>
+<div id="scope-popup">
+  <strong>Scope & Limitations</strong>
+  <ul>
+    <li>Scoped to the top-<span id="exp-scope-count"></span> popular npm packages. Real blast radius extends beyond this graph.</li>
+    <li>Uses latest version dependency trees. Pinned older versions may have different dependencies.</li>
+    <li>Models a fresh <code>npm install</code> (no lockfile). Existing lockfiles prevent auto-pull until updated.</li>
+    <li>Does not distinguish devDependencies from runtime — build-time compromise is still a supply chain risk.</li>
+  </ul>
 </div>
 
 <div id="footer" style="position:fixed;bottom:6px;right:12px;font-size:9px;color:#bdc3c7;z-index:5;">
@@ -322,6 +358,18 @@
 </div>
 
 <script>
+// ── SCOPE BADGE TOGGLE ─────────────────────────────────────────────────────
+document.getElementById('scope-badge').addEventListener('click', (e) => {
+  e.stopPropagation();
+  document.getElementById('scope-popup').classList.toggle('visible');
+});
+document.addEventListener('click', (e) => {
+  const popup = document.getElementById('scope-popup');
+  if (!popup.contains(e.target) && e.target.id !== 'scope-badge') {
+    popup.classList.remove('visible');
+  }
+});
+
 const NODE_BASE  = '#5b7ea8';
 const NODE_DIM   = '#bdc3c7';
 const AUTO_COLOR = '#c0392b';
@@ -356,11 +404,12 @@ function simulate(pkg, isDependencyOf) {
     infected.set(cur, { depth, exposure: parentExposure });
     for (const edge of (isDependencyOf[cur] ?? [])) {
       if (!infected.has(edge.name)) {
-        // if parent is already degraded, child inherits worst case
+        // Only the first edge matters: how does the direct dependent
+        // require the compromised package? Intermediate pinning is
+        // irrelevant — npm still resolves the compromised package's
+        // range from the intermediate's own package.json.
         const edgeType = exposureType(edge.requirement);
-        const childExposure = parentExposure === 'auto' ? edgeType
-          : parentExposure === 'needs-update' ? (edgeType === 'pinned' ? 'pinned' : 'needs-update')
-          : 'pinned';
+        const childExposure = depth === 0 ? edgeType : parentExposure;
         queue.push([edge.name, depth + 1, childExposure]);
       }
     }
