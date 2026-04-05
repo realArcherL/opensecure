@@ -152,13 +152,44 @@
     }
     #dl-json-wrap a { font-size: 11px; }
 
-    /* ── LEGEND ── */
-    #legend {
-      position: absolute; bottom: 16px; left: 16px;
-      display: flex; gap: 14px; z-index: 5;
+    /* ── EXPLAINER BOX (separate from stats) ── */
+    #explainer-box {
+      position: absolute; top: 16px; right: 260px;
+      width: 280px;
+      background: rgba(255,255,255,0.97);
+      border: 1px solid #d5d8dc;
+      border-radius: 6px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      padding: 12px 14px;
+      display: none; z-index: 10;
+      font-size: 11px;
     }
-    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #5d6d7e; }
-    .legend-dot  { width: 7px; height: 7px; border-radius: 50%; }
+    #explainer-box.visible { display: block; }
+    #explainer-box h3 {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.1em; color: #5d6d7e; margin-bottom: 10px;
+    }
+    .exp-section { margin-bottom: 10px; }
+    .exp-section:last-child { margin-bottom: 0; }
+    .exp-header {
+      display: flex; align-items: center; gap: 6px;
+      font-weight: 600; font-size: 11px; margin-bottom: 4px;
+    }
+    .exp-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+      display: inline-block;
+    }
+    .exp-desc {
+      font-size: 10px; color: #7f8c8d; line-height: 1.5; margin-bottom: 4px;
+    }
+    .exp-example {
+      font-family: monospace; font-size: 10px;
+      padding: 4px 8px; border-radius: 4px;
+      display: inline-block;
+    }
+    .exp-none {
+      font-size: 10px; color: #bdc3c7; font-style: italic;
+    }
 
     /* ── PULSE ANIMATION ── */
     @keyframes pulse-purple {
@@ -167,17 +198,6 @@
     }
     .pulse { animation: pulse-purple 2s ease-in-out infinite; }
 
-    /* ── SCOPE NOTE ── */
-    #scope-note {
-      position: absolute; bottom: 16px; right: 16px;
-      font-size: 10px; color: #856404; text-align: left; line-height: 1.5;
-      background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px;
-      padding: 8px 12px;
-      display: flex; align-items: flex-start; gap: 8px;
-    }
-    #scope-note .warn-icon {
-      font-size: 16px; line-height: 1; flex-shrink: 0;
-    }
   </style>
 </head>
 <body>
@@ -196,12 +216,6 @@
 
 <div id="graph-area">
   <svg id="graph"></svg>
-
-  <div id="legend">
-    <div class="legend-item"><div class="legend-dot" style="background:#c0392b"></div> Auto-pull (^/~/>=)</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#e67e22"></div> Needs update</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#27ae60"></div> Pinned (safe now)</div>
-  </div>
 
   <div id="stats-panel">
     <div class="pkg-name" id="s-name"></div>
@@ -243,13 +257,16 @@
     <div id="dl-json-wrap"></div>
   </div>
 
-  <div id="scope-note">
-    <span class="warn-icon">⚠️</span>
-    <div>
-      Edges within top-<span id="scope-count"></span> only.<br>
-      Real blast radius extends beyond this graph.
+  <div id="explainer-box">
+    <h3 id="exp-heading">What if the next version is compromised?</h3>
+    <div id="exp-auto" class="exp-section"></div>
+    <div id="exp-needs" class="exp-section"></div>
+    <div id="exp-pinned" class="exp-section"></div>
+    <div id="exp-scope" style="margin-top:10px;padding-top:8px;border-top:1px solid #ecf0f1;font-size:9px;color:#95a5a6;line-height:1.5;">
+      ⚠️ Within top-<span id="exp-scope-count"></span> popular npm packages only. Real blast radius extends beyond this graph.
     </div>
   </div>
+
 </div>
 
 <script>
@@ -265,7 +282,10 @@ function exposureType(req) {
   const r = (req ?? '*').trim();
   if (!r || r === '*' || r === 'latest') return 'auto';
   if (r.startsWith('^') || r.startsWith('~') || r.startsWith('>')) return 'auto';
-  if (/^\d+\.\d+\.\d+/.test(r) && !r.includes(' ') && !r.includes('<') && !r.includes('>')) return 'pinned';
+  // bare numbers: "1", "1.4", "1.x", "1.x.x", "1.*" → npm treats as range (>=1.0.0 <2.0.0)
+  if (/^\d+(\.(x|\*|\d+))?(\.x|\.\*)?$/.test(r) && !/^\d+\.\d+\.\d+$/.test(r)) return 'auto';
+  // exact pin: 1.4.0
+  if (/^\d+\.\d+\.\d+$/.test(r)) return 'pinned';
   return 'needs-update';
 }
 
@@ -309,7 +329,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
   document.getElementById('pkg-count').textContent = `${N} packages`;
   document.getElementById('s-setsize').textContent = N;
-  document.getElementById('scope-count').textContent = N;
+  document.getElementById('exp-scope-count').textContent = N;
 
   // precompute cascade sizes for sidebar ranking + node sizing
   const cascades = new Map();
@@ -466,6 +486,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     if (e.target.tagName === 'svg' || e.target.tagName === 'rect') {
       reset();
       document.getElementById('stats-panel').classList.remove('visible');
+      document.getElementById('explainer-box').classList.remove('visible');
       document.querySelectorAll('.threat-item').forEach(el => el.classList.remove('active'));
     }
   });
@@ -601,6 +622,53 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       verdict.textContent  = 'Low auto-spread risk';
       verdict.style.cssText = `background:${NEED_COLOR}18;color:${NEED_COLOR};border-radius:4px;`;
     }
+
+    // ── DYNAMIC EXPLAINER ────────────────────────────────────────────────────────
+    // find a real example edge for each exposure type
+    const autoEx = [], needEx = [], pinEx = [];
+    for (const edge of (graph.isDependencyOf[id] ?? [])) {
+      if (!cascade.has(edge.name)) continue;
+      const t = exposureType(edge.requirement);
+      const entry = { name: edge.name, req: edge.requirement ?? '*' };
+      if (t === 'auto' && autoEx.length < 1)         autoEx.push(entry);
+      if (t === 'needs-update' && needEx.length < 1) needEx.push(entry);
+      if (t === 'pinned' && pinEx.length < 1)        pinEx.push(entry);
+    }
+
+    function renderSection(el, color, label, desc, examples, count) {
+      if (count === 0) {
+        el.innerHTML = `
+          <div class="exp-header"><span class="exp-dot" style="background:${color}"></span><span style="color:${color}">${label}</span></div>
+          <div class="exp-none">None in this cascade</div>`;
+        return;
+      }
+      const ex = examples[0]
+        ? `<span class="exp-example" style="background:${color}12;color:${color}">${examples[0].name}: ${examples[0].req}</span>`
+        : '';
+      el.innerHTML = `
+        <div class="exp-header"><span class="exp-dot" style="background:${color}"></span><span style="color:${color}">${label}</span> <span style="color:#95a5a6;font-weight:400;font-size:10px;">(${count})</span></div>
+        <div class="exp-desc">${desc}</div>
+        ${ex}`;
+    }
+
+    renderSection(
+      document.getElementById('exp-auto'), AUTO_COLOR, 'Auto-pull', 
+      'Uses ^, ~, or >= ranges. A compromised version gets pulled automatically on next <code>npm install</code>.', 
+      autoEx, autoCount
+    );
+    renderSection(
+      document.getElementById('exp-needs'), NEED_COLOR, 'Needs update',
+      'In the dependency chain but behind a stricter range. Requires a deliberate <code>npm update</code> to pull in.',
+      needEx, needCount
+    );
+    renderSection(
+      document.getElementById('exp-pinned'), PIN_COLOR, 'Pinned',
+      'Exact version pin. Safe unless someone manually bumps the version.',
+      pinEx, pinCount
+    );
+
+    document.getElementById('explainer-box').classList.toggle('visible', cascade.size > 0);
+    document.getElementById('exp-heading').textContent = `What if ${id} is compromised?`;
   }
 
   // ── QUERY PARAM SELECTION ────────────────────────────────────────────────
