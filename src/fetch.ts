@@ -6,7 +6,7 @@ import {
 } from './lib/api.js';
 import { log } from './lib/log.js';
 
-const filename: string = process.argv[2] ?? 'data/top100.json';
+const filename: string = process.argv[2] ?? 'data/top500.json';
 const packages: Array<{ name: string; rank: number }> = JSON.parse(
   readFileSync(filename, 'utf-8'),
 );
@@ -62,6 +62,10 @@ for (let i = 0; i < packages.length; i++) {
       dependencies: { nodes, edges },
     };
 
+    if (dependentsData.missing)
+      log.warn(
+        `${name}@${version}: no dependent data on deps.dev, stored as 0`,
+      );
     writeFileSync(file, JSON.stringify(output, null, 2));
     log.info(
       `Fetched ${i + 1}/${packages.length}: ${name} (${nodes.length} dep nodes, ${dependentsData.dependentCount} total dependents)`,

@@ -35,6 +35,7 @@ export async function getDependencies(name: string, version: string) {
 export async function getDependentCount(name: string, version: string) {
   const encoded = encodeURIComponent(name);
   const res = await fetchWithRetry(`${BASE}/v3alpha/systems/npm/packages/${encoded}/versions/${version}:dependents`);
+  if (res.status === 404) return { dependentCount: 0, directDependentCount: 0, indirectDependentCount: 0, missing: true };
   if (!res.ok) throw new Error(`getDependentCount ${name}@${version}: ${res.status}`);
-  return res.json() as Promise<{ dependentCount: number; directDependentCount: number; indirectDependentCount: number }>;
+  return res.json() as Promise<{ dependentCount: number; directDependentCount: number; indirectDependentCount: number; missing?: boolean }>;
 }

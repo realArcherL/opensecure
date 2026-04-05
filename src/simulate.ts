@@ -20,9 +20,11 @@ export function simulate(pkg: string, graph: Graph) {
     }
   }
 
-  infected.delete(pkg); // don't count the compromised package itself
+  infected.delete(pkg);
 
-  const totalDownloads = [...infected.keys()].reduce((sum, name) => {
+  // start with the compromised package's own dependents, then add cascade
+  const ownDependents = graph.packages[pkg]?.totalDependents ?? 0;
+  const totalDownloads = ownDependents + [...infected.keys()].reduce((sum, name) => {
     return sum + (graph.packages[name]?.totalDependents ?? 0);
   }, 0);
 
