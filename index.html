@@ -31,6 +31,9 @@
       padding: 14px 16px 10px;
       border-bottom: 1px solid #d5d8dc;
       background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
     #panel-title h1 {
       font-size: 13px;
@@ -38,6 +41,14 @@
       color: #2c3e50;
       letter-spacing: -0.01em;
     }
+    #panel-title .title-links {
+      display: flex; gap: 8px; font-size: 10px;
+    }
+    #panel-title .title-links a {
+      color: #5d6d7e; text-decoration: none; font-weight: 600;
+      transition: color 0.15s;
+    }
+    #panel-title .title-links a:hover { color: #2c3e50; }
     #threat-panel header {
       padding: 14px 16px;
       border-bottom: 1px solid #d5d8dc;
@@ -235,6 +246,10 @@
 <div id="threat-panel">
   <div id="panel-title">
     <h1>Blast Radius</h1>
+    <span class="title-links">
+      <a href="https://github.com/realArcherL/opensecure" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://realarcherl.github.io/posts/npm_security/" target="_blank" rel="noopener">Blog</a>
+    </span>
   </div>
   <header>
     <h1>Packages</h1>
@@ -303,7 +318,7 @@
 </div>
 
 <div id="footer" style="position:fixed;bottom:6px;right:12px;font-size:9px;color:#bdc3c7;z-index:5;">
-  Analytics by <a href="https://umami.is" target="_blank" rel="noopener" style="color:#95a5a6;text-decoration:none;">Umami</a> · privacy-friendly, no cookies
+  Analytics by <a href="https://umami.is" target="_blank" rel="noopener" style="color:#95a5a6;text-decoration:none;">Umami</a>
 </div>
 
 <script>
