@@ -98,6 +98,17 @@
       font-size: 10px; font-weight: 600;
       letter-spacing: 0.08em; text-transform: uppercase; text-align: center;
     }
+    #ext-links {
+      margin-top: 8px; display: flex; gap: 8px;
+    }
+    #ext-links a {
+      flex: 1; text-align: center; padding: 5px 0;
+      font-size: 10px; font-weight: 600; text-decoration: none;
+      border-radius: 4px; transition: opacity 0.15s;
+    }
+    #ext-links a:hover { opacity: 0.8; }
+    .link-npmgraph  { background: #8e44ad18; color: #8e44ad; border: 1px solid #8e44ad44; }
+    .link-bundlephobia { background: #2980b918; color: #2980b9; border: 1px solid #2980b944; }
 
     /* ── LEGEND ── */
     #legend {
@@ -182,6 +193,7 @@
       <span class="stat-value" id="s-depth"></span>
     </div>
     <div id="verdict"></div>
+    <div id="ext-links"></div>
   </div>
 
   <div id="scope-note">
@@ -321,7 +333,8 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     .force('collision', d3.forceCollide().radius(8));
 
   const g = svg.append('g');
-  svg.call(d3.zoom().scaleExtent([0.15, 5]).on('zoom', e => g.attr('transform', e.transform)));
+  const zoom = d3.zoom().scaleExtent([0.15, 5]).on('zoom', e => g.attr('transform', e.transform));
+  svg.call(zoom);
 
   const link = g.append('g').selectAll('line')
     .data(links).join('line')
@@ -367,6 +380,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   function reset() {
     node.select('circle')
       .transition().duration(200)
+      .attr('r',      NODE_R)
       .attr('fill',   d => hasDependents.has(d.id) ? '#8e44ad22' : NODE_BASE + '33')
       .attr('stroke', d => hasDependents.has(d.id) ? '#8e44ad' : NODE_BASE)
       .attr('opacity', 1)
@@ -411,8 +425,12 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     const needCount = [...cascade.values()].filter(v => v.exposure === 'needs-update').length;
     const pinCount  = [...cascade.values()].filter(v => v.exposure === 'pinned').length;
 
+    // stop all pulsing on selection
+    node.select('circle').classed('pulse', false);
+
     // dim unaffected, highlight affected
     node.select('circle')
+      .attr('r',       d => d.id === id ? NODE_R * 2 : NODE_R)
       .attr('opacity', d => cascade.has(d.id) || d.id === id ? 1 : 0.06)
       .attr('filter',  d => cascade.has(d.id) || d.id === id ? 'url(#glow)' : null);
     node.select('text')
@@ -424,9 +442,19 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
         ? '#00000030' : '#00000006';
     });
 
-    // compromised node
+    // selected node — same transparent fill, yellow border
     node.select('circle').filter(d => d.id === id)
-      .attr('fill', COMP_COLOR + '55').attr('stroke', COMP_COLOR);
+      .attr('fill', '#8e44ad22').attr('stroke', '#f1c40f').attr('stroke-width', 2.5);
+
+    // pan & zoom to the selected node
+    const selNode = nodes.find(d => d.id === id);
+    if (selNode && selNode.x != null && selNode.y != null) {
+      const scale = 1.8;
+      const tx = width / 2 - selNode.x * scale;
+      const ty = height / 2 - selNode.y * scale;
+      svg.transition().duration(500)
+        .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+    }
 
     // animate cascade hop by hop
     for (const [depth, names] of [...byDepth.entries()].filter(([d]) => d > 0)) {
@@ -441,8 +469,14 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     // stats
     document.getElementById('stats-panel').classList.add('visible');
     document.getElementById('s-name').textContent    = id;
-    document.getElementById('s-name').style.color    = COMP_COLOR;
+    document.getElementById('s-name').style.color    = '#8e44ad';
     document.getElementById('s-version').textContent = `v${n.version}`;
+
+    // external links
+    const encodedId = encodeURIComponent(id);
+    document.getElementById('ext-links').innerHTML =
+      `<a class="link-npmgraph" href="https://npmgraph.js.org/?q=${encodedId}" target="_blank" rel="noopener">npmgraph ↗</a>` +
+      `<a class="link-bundlephobia" href="https://bundlephobia.com/package/${encodedId}" target="_blank" rel="noopener">bundlephobia ↗</a>`;
     document.getElementById('s-weekly').textContent  = fmt(n.weeklyDownloads ?? 0) + '/wk';
     const daily = Math.round((n.weeklyDownloads ?? 0) / 7);
     document.getElementById('s-daily').textContent   = fmt(daily) + '/day';
