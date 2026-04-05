@@ -27,5 +27,5 @@ for (const name of npmTopDependents) {
 }
 
 mkdirSync('data', { recursive: true });
-writeFileSync(`data/top${count}.json`, JSON.stringify(packages, null, 2));
-console.log(`Wrote ${packages.length} packages to data/top${count}.json`);
+writeFileSync('data/top.json', JSON.stringify(packages, null, 2));
+console.log(`Wrote ${packages.length} packages to data/top.json`);

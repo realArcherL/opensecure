@@ -3,10 +3,11 @@ import {
   getPackageInfo,
   getDependencies,
   getDependentCount,
+  getDownloads,
 } from './lib/api.js';
 import { log } from './lib/log.js';
 
-const filename: string = process.argv[2] ?? 'data/top500.json';
+const filename: string = process.argv[2] ?? 'data/top.json';
 const packages: Array<{ name: string; rank: number }> = JSON.parse(
   readFileSync(filename, 'utf-8'),
 );
@@ -35,9 +36,10 @@ for (let i = 0; i < packages.length; i++) {
   try {
     const { version } = await getPackageInfo(name);
 
-    const [depsData, dependentsData] = await Promise.all([
+    const [depsData, dependentsData, downloads] = await Promise.all([
       getDependencies(name, version),
       getDependentCount(name, version),
+      getDownloads(name, version),
     ]);
 
     const nodes = depsData.nodes.map(n => ({
@@ -59,6 +61,7 @@ for (let i = 0; i < packages.length; i++) {
         indirect: dependentsData.indirectDependentCount,
         total: dependentsData.dependentCount,
       },
+      downloads,
       dependencies: { nodes, edges },
     };
 
@@ -68,7 +71,7 @@ for (let i = 0; i < packages.length; i++) {
       );
     writeFileSync(file, JSON.stringify(output, null, 2));
     log.info(
-      `Fetched ${i + 1}/${packages.length}: ${name} (${nodes.length} dep nodes, ${dependentsData.dependentCount} total dependents)`,
+      `Fetched ${i + 1}/${packages.length}: ${name}@${version} — ${downloads.weekly.toLocaleString()}/week, ${downloads.daily.toLocaleString()}/day, ~${downloads.hourly.toLocaleString()}/hr (est.)`,
     );
   } catch (err) {
     log.error(

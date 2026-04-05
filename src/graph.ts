@@ -4,6 +4,7 @@ import { log } from './lib/log.js';
 interface RawPackage {
   name: string;
   version: string;
+  downloads: { version: string; weekly: number; daily: number; hourly: number };
   dependents: { direct?: number; indirect?: number; total?: number };
   dependencies: {
     nodes: Array<{ name: string; version: string }>;
@@ -18,14 +19,14 @@ const raws: RawPackage[] = files.map(f =>
 
 const topSet = new Set(raws.map(r => r.name));
 
-const packages: Record<string, { version: string; totalDependents: number }> =
-  {};
+const packages: Record<string, { version: string; weeklyDownloads: number; totalDependents: number }> = {};
 const dependsOn: Record<string, string[]> = {};
 const isDependencyOf: Record<string, string[]> = {};
 
 for (const pkg of raws) {
   packages[pkg.name] = {
     version: pkg.version,
+    weeklyDownloads: pkg.downloads?.weekly ?? 0,
     totalDependents: pkg.dependents?.total ?? 0,
   };
 

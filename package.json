@@ -12,6 +12,7 @@
     "graph": "node dist/graph.js",
     "simulate": "node dist/simulate.js",
     "simulate:all": "node dist/simulate.js --all",
+    "viz": "npx serve . -p 3000",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

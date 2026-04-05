@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { log } from './lib/log.js';
 
 interface Graph {
-  packages: Record<string, { version: string; totalDependents: number }>;
+  packages: Record<string, { version: string; weeklyDownloads: number; totalDependents: number }>;
   isDependencyOf: Record<string, string[]>;
 }
 
@@ -22,10 +22,9 @@ export function simulate(pkg: string, graph: Graph) {
 
   infected.delete(pkg);
 
-  // start with the compromised package's own dependents, then add cascade
-  const ownDependents = graph.packages[pkg]?.totalDependents ?? 0;
-  const totalDownloads = ownDependents + [...infected.keys()].reduce((sum, name) => {
-    return sum + (graph.packages[name]?.totalDependents ?? 0);
+  // weekly downloads of compromised pkg + all cascade packages = real-world reach
+  const totalDownloads = [pkg, ...infected.keys()].reduce((sum, name) => {
+    return sum + (graph.packages[name]?.weeklyDownloads ?? 0);
   }, 0);
 
   return { infected, maxDepth: Math.max(0, ...[...infected.values()]), totalDownloads };
@@ -63,7 +62,7 @@ if (arg === '--all') {
   log.info(`Directly infects: ${[...infected].filter(([,d]) => d === 1).length}`);
   log.info(`Total cascade: ${infected.size}/${Object.keys(graph.packages).length}`);
   log.info(`Max depth: ${maxDepth} hops`);
-  log.info(`Affected dependents (upper bound, may double-count): ${totalDownloads.toLocaleString()}`);
+  log.info(`Weekly downloads at risk (cascade total): ${totalDownloads.toLocaleString()}`);
 
   if (infected.size > 0) {
     console.log('\nInfected packages:');

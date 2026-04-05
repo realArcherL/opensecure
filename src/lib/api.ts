@@ -32,6 +32,22 @@ export async function getDependencies(name: string, version: string) {
   }>;
 }
 
+export async function getDownloads(name: string, version: string): Promise<{
+  version: string;    // the version these download counts apply to
+  weekly: number;     // last 7 days (npm API: last-week)
+  daily: number;      // last 24 hours (npm API: last-day)
+  hourly: number;     // derived: daily / 24 — npm has no sub-daily resolution
+}> {
+  const encoded = encodeURIComponent(name);
+  const [weekRes, dayRes] = await Promise.all([
+    fetch(`https://api.npmjs.org/downloads/point/last-week/${encoded}`),
+    fetch(`https://api.npmjs.org/downloads/point/last-day/${encoded}`),
+  ]);
+  const weekly = weekRes.ok ? ((await weekRes.json()) as { downloads: number }).downloads ?? 0 : 0;
+  const daily  = dayRes.ok  ? ((await dayRes.json())  as { downloads: number }).downloads ?? 0 : 0;
+  return { version, weekly, daily, hourly: Math.round(daily / 24) };
+}
+
 export async function getDependentCount(name: string, version: string) {
   const encoded = encodeURIComponent(name);
   const res = await fetchWithRetry(`${BASE}/v3alpha/systems/npm/packages/${encoded}/versions/${version}:dependents`);
