@@ -754,7 +754,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
     renderSection(
       document.getElementById('exp-auto'), AUTO_COLOR, 'Auto-pull', 
-      'Their <code>package.json</code> has a range like <code>^1.4.0</code> or <code>~1.4.0</code>. Running <code>npm i</code> will silently pull in the compromised version.', 
+      `Their <code>package.json</code> has a range like <code>${autoEx[0]?.req ?? '^x.y.z'}</code>. Running <code>npm i</code> will silently pull in the compromised version.`, 
       autoEx, autoCount
     );
     renderSection(
@@ -764,7 +764,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     );
     renderSection(
       document.getElementById('exp-pinned'), PIN_COLOR, 'Pinned',
-      'Their <code>package.json</code> has an exact version like <code>1.4.0</code>. Safe unless someone manually bumps it.',
+      `Their <code>package.json</code> has an exact version like <code>${pinEx[0]?.req ?? 'x.y.z'}</code>. Safe unless someone manually bumps it.`,
       pinEx, pinCount
     );
 
