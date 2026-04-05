@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>npm supply chain risk</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #eef0f4;
+      color: #2c3e50;
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+      display: flex;
+      height: 100vh;
+    }
+
+    /* ── LEFT PANEL ── */
+    #threat-panel {
+      width: 240px;
+      flex-shrink: 0;
+      background: #ffffff;
+      border-right: 1px solid #d5d8dc;
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+    }
+    #threat-panel header {
+      padding: 14px 16px;
+      border-bottom: 1px solid #d5d8dc;
+    }
+    #threat-panel header h1 {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #5d6d7e;
+    }
+    #threat-panel header p { font-size: 11px; color: #7f8c8d; margin-top: 3px; }
+
+    #threat-list { overflow-y: auto; flex: 1; }
+    #threat-list::-webkit-scrollbar { width: 3px; }
+    #threat-list::-webkit-scrollbar-thumb { background: #bdc3c7; border-radius: 2px; }
+
+    .threat-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid #ecf0f1;
+      transition: background 0.1s;
+    }
+    .threat-item:hover  { background: #f0f3f7; }
+    .threat-item.active { background: #dce6f1; }
+    .threat-item .name {
+      font-size: 11px; color: #2c3e50; flex: 1;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-family: monospace;
+    }
+    .threat-item .count { font-size: 10px; color: #7f8c8d; flex-shrink: 0; }
+    .size-bar {
+      width: 28px; height: 3px; background: #d5dbdb; flex-shrink: 0; border-radius: 2px; overflow: hidden;
+    }
+    .size-bar-fill { height: 100%; background: #5b7ea8; border-radius: 2px; }
+
+    /* ── GRAPH ── */
+    #graph-area { flex: 1; position: relative; overflow: hidden; }
+    svg { width: 100%; height: 100%; }
+
+    /* ── STATS PANEL ── */
+    #stats-panel {
+      position: absolute; top: 16px; right: 16px;
+      width: 230px;
+      background: rgba(255,255,255,0.97);
+      border: 1px solid #d5d8dc;
+      border-radius: 6px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      padding: 14px;
+      display: none; z-index: 10;
+    }
+    #stats-panel.visible { display: block; }
+    #stats-panel .pkg-name {
+      font-family: monospace; font-size: 14px; font-weight: 600; margin-bottom: 2px;
+    }
+    #stats-panel .pkg-version { font-size: 10px; color: #7f8c8d; margin-bottom: 12px; font-family: monospace; }
+    .stat-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      padding: 4px 0; border-bottom: 1px solid #ecf0f1;
+    }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { font-size: 10px; color: #5d6d7e; }
+    .stat-value { font-size: 12px; color: #2c3e50; font-variant-numeric: tabular-nums; }
+    .stat-note  { font-size: 9px; color: #95a5a6; margin-top: 1px; text-align: right; }
+    #verdict {
+      margin-top: 10px; padding: 6px 10px;
+      font-size: 10px; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase; text-align: center;
+    }
+
+    /* ── LEGEND ── */
+    #legend {
+      position: absolute; bottom: 16px; left: 16px;
+      display: flex; gap: 14px; z-index: 5;
+    }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #5d6d7e; }
+    .legend-dot  { width: 7px; height: 7px; border-radius: 50%; }
+
+    /* ── PULSE ANIMATION ── */
+    @keyframes pulse-purple {
+      0%, 100% { opacity: 0.5; }
+      50%      { opacity: 1; }
+    }
+    .pulse { animation: pulse-purple 2s ease-in-out infinite; }
+
+    /* ── SCOPE NOTE ── */
+    #scope-note {
+      position: absolute; bottom: 16px; right: 16px;
+      font-size: 10px; color: #856404; text-align: left; line-height: 1.5;
+      background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px;
+      padding: 8px 12px;
+      display: flex; align-items: flex-start; gap: 8px;
+    }
+    #scope-note .warn-icon {
+      font-size: 16px; line-height: 1; flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+<div id="threat-panel">
+  <header>
+    <h1>Packages</h1>
+    <p id="pkg-count">Loading…</p>
+  </header>
+  <div id="threat-list"></div>
+</div>
+
+<div id="graph-area">
+  <svg id="graph"></svg>
+
+  <div id="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#c0392b"></div> Auto-pull (^/~/>=)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#e67e22"></div> Needs update</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#27ae60"></div> Pinned (safe now)</div>
+  </div>
+
+  <div id="stats-panel">
+    <div class="pkg-name" id="s-name"></div>
+    <div class="pkg-version" id="s-version"></div>
+    <div class="stat-row">
+      <span class="stat-label">Weekly downloads</span>
+      <span class="stat-value" id="s-weekly"></span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Daily downloads</span>
+      <span class="stat-value" id="s-daily"></span>
+    </div>
+    <div class="stat-row" title="daily ÷ 24 — npm has no sub-daily API">
+      <span class="stat-label">Hourly (est.)</span>
+      <span class="stat-value" id="s-hourly"></span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Cascade (top-<span id="s-setsize"></span>)</span>
+      <span class="stat-value" id="s-r0"></span>
+    </div>
+    <div class="stat-row" title="^ ~ >= ranges — pulled in on next npm install">
+      <span class="stat-label">Auto-pull</span>
+      <span class="stat-value" id="s-auto" style="color:#c0392b"></span>
+    </div>
+    <div class="stat-row" title="In the dep chain but requires deliberate npm update">
+      <span class="stat-label">Needs update</span>
+      <span class="stat-value" id="s-manual" style="color:#e67e22"></span>
+    </div>
+    <div class="stat-row" title="Exact version pins — safe unless someone deliberately updates">
+      <span class="stat-label">Pinned</span>
+      <span class="stat-value" id="s-pinned" style="color:#27ae60"></span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Max depth</span>
+      <span class="stat-value" id="s-depth"></span>
+    </div>
+    <div id="verdict"></div>
+  </div>
+
+  <div id="scope-note">
+    <span class="warn-icon">⚠️</span>
+    <div>
+      Edges within top-<span id="scope-count"></span> only.<br>
+      Real blast radius extends beyond this graph.
+    </div>
+  </div>
+</div>
+
+<script>
+const NODE_BASE  = '#5b7ea8';
+const NODE_DIM   = '#bdc3c7';
+const AUTO_COLOR = '#c0392b';
+const NEED_COLOR = '#e67e22';
+const PIN_COLOR  = '#27ae60';
+const COMP_COLOR = '#c0392b';
+
+// three exposure types: auto, needs-update, pinned
+function exposureType(req) {
+  const r = (req ?? '*').trim();
+  if (!r || r === '*' || r === 'latest') return 'auto';
+  if (r.startsWith('^') || r.startsWith('~') || r.startsWith('>')) return 'auto';
+  if (/^\d+\.\d+\.\d+/.test(r) && !r.includes(' ') && !r.includes('<') && !r.includes('>')) return 'pinned';
+  return 'needs-update';
+}
+
+function exposureColor(type) {
+  if (type === 'auto')         return AUTO_COLOR;
+  if (type === 'needs-update') return NEED_COLOR;
+  return PIN_COLOR;
+}
+
+function simulate(pkg, isDependencyOf) {
+  const infected = new Map(); // name -> { depth, exposure }
+  const queue = [[pkg, 0, 'auto']];
+  while (queue.length) {
+    const [cur, depth, parentExposure] = queue.shift();
+    if (infected.has(cur)) continue;
+    infected.set(cur, { depth, exposure: parentExposure });
+    for (const edge of (isDependencyOf[cur] ?? [])) {
+      if (!infected.has(edge.name)) {
+        // if parent is already degraded, child inherits worst case
+        const edgeType = exposureType(edge.requirement);
+        const childExposure = parentExposure === 'auto' ? edgeType
+          : parentExposure === 'needs-update' ? (edgeType === 'pinned' ? 'pinned' : 'needs-update')
+          : 'pinned';
+        queue.push([edge.name, depth + 1, childExposure]);
+      }
+    }
+  }
+  return infected;
+}
+
+function fmt(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(0) + 'K';
+  return n.toLocaleString();
+}
+
+fetch('data/graph.json').then(r => r.json()).then(graph => {
+  const pkgNames = Object.keys(graph.packages);
+  const N = pkgNames.length;
+
+  document.getElementById('pkg-count').textContent = `${N} packages`;
+  document.getElementById('s-setsize').textContent = N;
+  document.getElementById('scope-count').textContent = N;
+
+  // precompute cascade sizes for sidebar ranking + node sizing
+  const cascades = new Map();
+  for (const name of pkgNames) {
+    const infected = simulate(name, graph.isDependencyOf);
+    infected.delete(name);
+    cascades.set(name, infected);
+  }
+
+  const maxCascade = Math.max(...[...cascades.values()].map(c => c.size), 1);
+
+  const nodes = pkgNames.map(name => ({
+    id: name,
+    ...graph.packages[name],
+    cascade: cascades.get(name),
+  }));
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+  // links from dependsOn (edges are now objects with .name)
+  const links = [];
+  for (const [from, edges] of Object.entries(graph.dependsOn)) {
+    for (const edge of edges) links.push({ source: from, target: edge.name });
+  }
+
+  // ── SIDEBAR ───────────────────────────────────────────────────────────────
+  const sorted = [...nodes].sort((a, b) =>
+    b.cascade.size - a.cascade.size || b.weeklyDownloads - a.weeklyDownloads
+  );
+  const listEl = document.getElementById('threat-list');
+  for (const n of sorted) {
+    const pct = Math.round((n.cascade.size / maxCascade) * 100);
+    const el = document.createElement('div');
+    el.className = 'threat-item';
+    el.dataset.id = n.id;
+    el.innerHTML = `
+      <div class="size-bar"><div class="size-bar-fill" style="width:${pct}%"></div></div>
+      <div class="name">${n.id}</div>
+      <div class="count">${n.cascade.size > 0 ? `+${n.cascade.size}` : '—'}</div>
+    `;
+    el.addEventListener('click', () => selectPackage(n.id));
+    listEl.appendChild(el);
+  }
+
+  // ── D3 SETUP ──────────────────────────────────────────────────────────────
+  const svg = d3.select('#graph');
+  const width  = document.getElementById('graph-area').clientWidth;
+  const height = document.getElementById('graph-area').clientHeight;
+
+  // one glow filter reused for active nodes
+  const defs = svg.append('defs');
+  const glow = defs.append('filter').attr('id', 'glow').attr('x', '-30%').attr('y', '-30%').attr('width', '160%').attr('height', '160%');
+  glow.append('feDropShadow').attr('dx', '0').attr('dy', '0').attr('stdDeviation', '3').attr('flood-color', '#5b7ea8').attr('flood-opacity', '0.35');
+
+  // pulsating purple glow for nodes that have dependents (others depend on them)
+  const purpleGlow = defs.append('filter').attr('id', 'purple-glow').attr('x', '-50%').attr('y', '-50%').attr('width', '200%').attr('height', '200%');
+  purpleGlow.append('feDropShadow').attr('dx', '0').attr('dy', '0').attr('stdDeviation', '4').attr('flood-color', '#8e44ad').attr('flood-opacity', '0.5');
+
+  // radial background gradient
+  const grad = defs.append('radialGradient').attr('id', 'bg').attr('cx', '50%').attr('cy', '50%').attr('r', '70%');
+  grad.append('stop').attr('offset', '0%').attr('stop-color', '#f5f7fa');
+  grad.append('stop').attr('offset', '100%').attr('stop-color', '#eaecf0');
+  svg.insert('rect', ':first-child').attr('width', '100%').attr('height', '100%').attr('fill', 'url(#bg)');
+
+  const sim = d3.forceSimulation(nodes)
+    .force('link',      d3.forceLink(links).id(d => d.id).distance(80).strength(0.25))
+    .force('charge',    d3.forceManyBody().strength(-160))
+    .force('center',    d3.forceCenter(width / 2, height / 2))
+    .force('collision', d3.forceCollide().radius(8));
+
+  const g = svg.append('g');
+  svg.call(d3.zoom().scaleExtent([0.15, 5]).on('zoom', e => g.attr('transform', e.transform)));
+
+  const link = g.append('g').selectAll('line')
+    .data(links).join('line')
+    .attr('stroke', '#0000000d')
+    .attr('stroke-width', 1);
+
+  const node = g.append('g').selectAll('g')
+    .data(nodes).join('g')
+    .style('cursor', 'pointer')
+    .call(d3.drag()
+      .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on('end',   (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
+    )
+    .on('click', (e, d) => selectPackage(d.id));
+
+  const NODE_R = 6;
+  const hasDependents = new Set(Object.keys(graph.isDependencyOf).filter(k => graph.isDependencyOf[k]?.length > 0));
+
+  node.append('circle')
+    .attr('r',            NODE_R)
+    .attr('fill',         d => hasDependents.has(d.id) ? '#8e44ad22' : NODE_BASE + '33')
+    .attr('stroke',       d => hasDependents.has(d.id) ? '#8e44ad' : NODE_BASE)
+    .attr('stroke-width', 1)
+    .attr('filter',       d => hasDependents.has(d.id) ? 'url(#purple-glow)' : null)
+    .classed('pulse',     d => hasDependents.has(d.id));
+
+  node.append('text')
+    .attr('x', NODE_R + 3)
+    .attr('y', 4)
+    .attr('fill', '#7f8c8d')
+    .attr('font-size', '8px')
+    .attr('font-family', 'monospace')
+    .text(d => d.id);
+
+  sim.on('tick', () => {
+    link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    node.attr('transform', d => `translate(${d.x},${d.y})`);
+  });
+
+  // ── SELECT ────────────────────────────────────────────────────────────────
+  function reset() {
+    node.select('circle')
+      .transition().duration(200)
+      .attr('fill',   d => hasDependents.has(d.id) ? '#8e44ad22' : NODE_BASE + '33')
+      .attr('stroke', d => hasDependents.has(d.id) ? '#8e44ad' : NODE_BASE)
+      .attr('opacity', 1)
+      .attr('filter', d => hasDependents.has(d.id) ? 'url(#purple-glow)' : null);
+    node.select('circle').classed('pulse', d => hasDependents.has(d.id));
+    node.select('text').attr('fill', '#7f8c8d');
+    link.attr('stroke', '#0000000d');
+  }
+
+  svg.on('click', (e) => {
+    if (e.target.tagName === 'svg' || e.target.tagName === 'rect') {
+      reset();
+      document.getElementById('stats-panel').classList.remove('visible');
+      document.querySelectorAll('.threat-item').forEach(el => el.classList.remove('active'));
+    }
+  });
+
+  function selectPackage(id) {
+    // update URL query param without reload
+    const url = new URL(window.location);
+    url.searchParams.set('pkg', id);
+    window.history.replaceState(null, '', url);
+
+    document.querySelectorAll('.threat-item').forEach(el =>
+      el.classList.toggle('active', el.dataset.id === id));
+    document.querySelector(`.threat-item[data-id="${CSS.escape(id)}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+
+    const n = nodeMap.get(id);
+    const infected = simulate(id, graph.isDependencyOf);
+    const byDepth = new Map();
+    for (const [name, v] of infected) {
+      if (!byDepth.has(v.depth)) byDepth.set(v.depth, []);
+      byDepth.get(v.depth).push(name);
+    }
+
+    infected.delete(id);
+    const cascade = infected;
+
+    const maxDepth  = Math.max(0, ...[...cascade.values()].map(v => v.depth));
+    const autoCount = [...cascade.values()].filter(v => v.exposure === 'auto').length;
+    const needCount = [...cascade.values()].filter(v => v.exposure === 'needs-update').length;
+    const pinCount  = [...cascade.values()].filter(v => v.exposure === 'pinned').length;
+
+    // dim unaffected, highlight affected
+    node.select('circle')
+      .attr('opacity', d => cascade.has(d.id) || d.id === id ? 1 : 0.06)
+      .attr('filter',  d => cascade.has(d.id) || d.id === id ? 'url(#glow)' : null);
+    node.select('text')
+      .attr('fill', d => cascade.has(d.id) || d.id === id ? '#2c3e50' : '#d5dbdb');
+
+    link.attr('stroke', l => {
+      const s = l.source.id ?? l.source, t = l.target.id ?? l.target;
+      return (cascade.has(s) || s === id) && (cascade.has(t) || t === id)
+        ? '#00000030' : '#00000006';
+    });
+
+    // compromised node
+    node.select('circle').filter(d => d.id === id)
+      .attr('fill', COMP_COLOR + '55').attr('stroke', COMP_COLOR);
+
+    // animate cascade hop by hop
+    for (const [depth, names] of [...byDepth.entries()].filter(([d]) => d > 0)) {
+      setTimeout(() => {
+        node.select('circle').filter(d => names.includes(d.id))
+          .transition().duration(250)
+          .attr('fill',   d => exposureColor(cascade.get(d.id)?.exposure) + '44')
+          .attr('stroke', d => exposureColor(cascade.get(d.id)?.exposure));
+      }, depth * 220);
+    }
+
+    // stats
+    document.getElementById('stats-panel').classList.add('visible');
+    document.getElementById('s-name').textContent    = id;
+    document.getElementById('s-name').style.color    = COMP_COLOR;
+    document.getElementById('s-version').textContent = `v${n.version}`;
+    document.getElementById('s-weekly').textContent  = fmt(n.weeklyDownloads ?? 0) + '/wk';
+    const daily = Math.round((n.weeklyDownloads ?? 0) / 7);
+    document.getElementById('s-daily').textContent   = fmt(daily) + '/day';
+    document.getElementById('s-hourly').textContent  = `~${fmt(Math.round(daily / 24))}/hr`;
+    document.getElementById('s-r0').textContent      = `${cascade.size} packages`;
+    document.getElementById('s-auto').textContent    = `${autoCount}`;
+    document.getElementById('s-manual').textContent  = `${needCount}`;
+    document.getElementById('s-pinned').textContent  = `${pinCount}`;
+    document.getElementById('s-depth').textContent   = maxDepth > 0 ? `${maxDepth} hops` : 'none';
+
+    const verdict = document.getElementById('verdict');
+    if (cascade.size === 0) {
+      verdict.textContent  = 'Isolated within this set';
+      verdict.style.cssText = 'background:#ecf0f1;color:#7f8c8d;border-radius:4px;';
+    } else if (autoCount >= cascade.size * 0.5) {
+      verdict.textContent  = 'High auto-pull exposure';
+      verdict.style.cssText = `background:${AUTO_COLOR}18;color:${AUTO_COLOR};border-radius:4px;`;
+    } else {
+      verdict.textContent  = 'Manual intervention required';
+      verdict.style.cssText = `background:${NEED_COLOR}18;color:${NEED_COLOR};border-radius:4px;`;
+    }
+  }
+
+  // ── QUERY PARAM SELECTION ────────────────────────────────────────────────
+  const params = new URLSearchParams(window.location.search);
+  const qPkg = params.get('pkg');
+  // only select if it matches a known package name (whitelist approach)
+  if (qPkg && nodeMap.has(qPkg)) {
+    // wait for simulation to settle a bit before selecting
+    setTimeout(() => selectPackage(qPkg), 600);
+  }
+});
+</script>
+</body>
+</html>
