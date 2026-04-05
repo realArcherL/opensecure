@@ -280,7 +280,7 @@
     </span>
   </div>
   <header>
-    <h1>Packages</h1>
+    <h1>Top Packages</h1>
     <p id="pkg-count">Loading…</p>
   </header>
   <div id="search-wrap">
@@ -428,7 +428,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   const pkgNames = Object.keys(graph.packages);
   const N = pkgNames.length;
 
-  document.getElementById('pkg-count').textContent = `${N} packages`;
+  document.getElementById('pkg-count').textContent = `Top ${N} most popular npm packages`;
   document.getElementById('s-setsize').textContent = N;
   document.getElementById('exp-scope-count').textContent = N;
 
