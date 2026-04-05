@@ -7,7 +7,7 @@ interface Package {
   source: 'downloads' | 'dependents';
 }
 
-const count: number = parseInt(process.argv[2] ?? '100') || 100;
+const count: number = parseInt(process.argv[2] ?? '1000') || 1000;
 
 const seen = new Set<string>();
 const packages: Package[] = [];

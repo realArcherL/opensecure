@@ -1,0 +1,75 @@
+name: Build data & deploy to Pages
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'          # Every Monday at 04:00 UTC
+  workflow_dispatch:               # Manual trigger from GitHub UI
+
+# ── PERMISSIONS ──────────────────────────────────────────────────────────────
+# Principle of least privilege — only what Pages needs, nothing else.
+permissions:
+  contents: read                   # checkout the repo
+  pages: write                     # publish to GitHub Pages
+  id-token: write                  # OIDC token for Pages deployment
+
+# Cancel any in-progress run for this workflow (avoid duplicate deploys).
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30            # hard cap — kill if fetch hangs
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Node setup (locked to LTS, with npm cache) ─────────────────────
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # ── 3. Install (clean, deterministic) ──────────────────────────────────
+      - name: Install dependencies
+        run: npm ci
+
+      # ── 4. Build TypeScript ────────────────────────────────────────────────
+      - name: Compile TypeScript
+        run: npm run build
+
+      # ── 5. Generate data ───────────────────────────────────────────────────
+      - name: Seed top packages
+        run: npm run seed
+
+      - name: Fetch package data from deps.dev
+        run: npm run fetch
+
+      - name: Build graph
+        run: npm run graph
+
+      # ── 6. Assemble deploy artifact ────────────────────────────────────────
+      #    Only ship what the browser needs — nothing else.
+      - name: Prepare site directory
+        run: |
+          mkdir -p _site/data
+          cp index.html _site/
+          cp data/graph.json _site/data/
+
+      # ── 7. Upload & deploy ─────────────────────────────────────────────────
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

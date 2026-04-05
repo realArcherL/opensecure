@@ -592,13 +592,13 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
     const verdict = document.getElementById('verdict');
     if (cascade.size === 0) {
-      verdict.textContent  = 'Isolated within this set';
+      verdict.textContent  = 'No downstream impact';
       verdict.style.cssText = 'background:#ecf0f1;color:#7f8c8d;border-radius:4px;';
     } else if (autoCount >= cascade.size * 0.5) {
-      verdict.textContent  = 'High auto-pull exposure';
+      verdict.textContent  = 'High auto-spread risk';
       verdict.style.cssText = `background:${AUTO_COLOR}18;color:${AUTO_COLOR};border-radius:4px;`;
     } else {
-      verdict.textContent  = 'Manual intervention required';
+      verdict.textContent  = 'Low auto-spread risk';
       verdict.style.cssText = `background:${NEED_COLOR}18;color:${NEED_COLOR};border-radius:4px;`;
     }
   }

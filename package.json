@@ -1,7 +1,7 @@
 {
   "name": "opensecure",
   "version": "1.0.0",
-  "description": "",
+  "description": "OSS supply chain compromise visualizer",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -17,7 +17,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "npm-high-impact": "^1.12.0"
   },
