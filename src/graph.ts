@@ -4,7 +4,6 @@ import { log } from './lib/log.js';
 interface RawPackage {
   name: string;
   version: string;
-  downloads: { version: string; weekly: number; daily: number; hourly: number };
   dependents: { direct?: number; indirect?: number; total?: number };
   dependencies: {
     nodes: Array<{ name: string; version: string }>;
@@ -19,17 +18,32 @@ const raws: RawPackage[] = files.map(f =>
 
 const topSet = new Set(raws.map(r => r.name));
 
-const packages: Record<string, { version: string; weeklyDownloads: number; totalDependents: number }> = {};
+const packages: Record<
+  string,
+  {
+    version: string;
+    totalDependents: number;
+    directDependents: number;
+    indirectDependents: number;
+  }
+> = {};
 // edge: from depends on `to` via `requirement` semver range
-const dependsOn: Record<string, Array<{ name: string; requirement: string }>> = {};
+const dependsOn: Record<
+  string,
+  Array<{ name: string; requirement: string }>
+> = {};
 // reverse: `pkg` is pulled in by these packages, with the range they use
-const isDependencyOf: Record<string, Array<{ name: string; requirement: string }>> = {};
+const isDependencyOf: Record<
+  string,
+  Array<{ name: string; requirement: string }>
+> = {};
 
 for (const pkg of raws) {
   packages[pkg.name] = {
     version: pkg.version,
-    weeklyDownloads: pkg.downloads?.weekly ?? 0,
     totalDependents: pkg.dependents?.total ?? 0,
+    directDependents: pkg.dependents?.direct ?? 0,
+    indirectDependents: pkg.dependents?.indirect ?? 0,
   };
 
   // keep only intra-set edges, deduplicate by `to` name

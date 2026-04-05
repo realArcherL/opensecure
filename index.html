@@ -39,6 +39,46 @@
     }
     #threat-panel header p { font-size: 11px; color: #7f8c8d; margin-top: 3px; }
 
+    #search-wrap {
+      padding: 8px 12px;
+      border-bottom: 1px solid #d5d8dc;
+      position: relative;
+    }
+    #search-clear {
+      position: absolute;
+      right: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 16px; height: 16px;
+      border: none; background: none;
+      cursor: pointer;
+      color: #95a5a6;
+      font-size: 14px;
+      line-height: 1;
+      padding: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: color 0.15s, background 0.15s;
+    }
+    #search-clear:hover { color: #2c3e50; background: #ecf0f1; }
+    #search-wrap.has-query #search-clear { display: flex; }
+    #search-wrap input {
+      width: 100%;
+      padding: 6px 8px 6px 28px;
+      font-size: 11px;
+      font-family: system-ui, -apple-system, sans-serif;
+      border: 1px solid #d5d8dc;
+      border-radius: 4px;
+      outline: none;
+      background: #f8f9fa url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='%237f8c8d' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85zm-5.242.156a5 5 0 1 1 0-10 5 5 0 0 1 0 10z'/%3E%3C/svg%3E") no-repeat 8px center;
+      color: #2c3e50;
+      transition: border-color 0.15s;
+    }
+    #search-wrap input:focus { border-color: #5b7ea8; }
+    #search-wrap input::placeholder { color: #aab2bd; }
+
     #threat-list { overflow-y: auto; flex: 1; }
     #threat-list::-webkit-scrollbar { width: 3px; }
     #threat-list::-webkit-scrollbar-thumb { background: #bdc3c7; border-radius: 2px; }
@@ -99,16 +139,18 @@
       letter-spacing: 0.08em; text-transform: uppercase; text-align: center;
     }
     #ext-links {
-      margin-top: 8px; display: flex; gap: 8px;
+      margin-top: 10px; display: flex; flex-direction: column; gap: 2px;
     }
-    #ext-links a {
-      flex: 1; text-align: center; padding: 5px 0;
-      font-size: 10px; font-weight: 600; text-decoration: none;
-      border-radius: 4px; transition: opacity 0.15s;
+    #ext-links a, #dl-json-wrap a {
+      display: block; padding: 2px 0;
+      font-size: 10px; color: #95a5a6; text-decoration: none;
+      cursor: pointer; transition: color 0.15s;
     }
-    #ext-links a:hover { opacity: 0.8; }
-    .link-npmgraph  { background: #8e44ad18; color: #8e44ad; border: 1px solid #8e44ad44; }
-    .link-bundlephobia { background: #2980b918; color: #2980b9; border: 1px solid #2980b944; }
+    #ext-links a:hover, #dl-json-wrap a:hover { color: #5d6d7e; text-decoration: underline; }
+    #dl-json-wrap {
+      margin-top: 8px; padding-top: 8px; border-top: 1px solid #ecf0f1;
+    }
+    #dl-json-wrap a { font-size: 11px; }
 
     /* ── LEGEND ── */
     #legend {
@@ -145,6 +187,10 @@
     <h1>Packages</h1>
     <p id="pkg-count">Loading…</p>
   </header>
+  <div id="search-wrap">
+    <input id="pkg-search" type="text" placeholder="Search packages…" autocomplete="off" spellcheck="false" />
+    <button id="search-clear" aria-label="Clear search">&times;</button>
+  </div>
   <div id="threat-list"></div>
 </div>
 
@@ -160,17 +206,17 @@
   <div id="stats-panel">
     <div class="pkg-name" id="s-name"></div>
     <div class="pkg-version" id="s-version"></div>
-    <div class="stat-row">
-      <span class="stat-label">Weekly downloads</span>
-      <span class="stat-value" id="s-weekly"></span>
+    <div class="stat-row" title="Total packages that depend on this (direct + indirect)">
+      <span class="stat-label">Total dependents</span>
+      <span class="stat-value" id="s-total-deps"></span>
     </div>
-    <div class="stat-row">
-      <span class="stat-label">Daily downloads</span>
-      <span class="stat-value" id="s-daily"></span>
+    <div class="stat-row" title="Packages that directly list this as a dependency">
+      <span class="stat-label">Direct dependents</span>
+      <span class="stat-value" id="s-direct-deps"></span>
     </div>
-    <div class="stat-row" title="daily ÷ 24 — npm has no sub-daily API">
-      <span class="stat-label">Hourly (est.)</span>
-      <span class="stat-value" id="s-hourly"></span>
+    <div class="stat-row" title="Packages that transitively depend on this">
+      <span class="stat-label">Indirect dependents</span>
+      <span class="stat-value" id="s-indirect-deps"></span>
     </div>
     <div class="stat-row">
       <span class="stat-label">Cascade (top-<span id="s-setsize"></span>)</span>
@@ -194,6 +240,7 @@
     </div>
     <div id="verdict"></div>
     <div id="ext-links"></div>
+    <div id="dl-json-wrap"></div>
   </div>
 
   <div id="scope-note">
@@ -289,7 +336,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
   // ── SIDEBAR ───────────────────────────────────────────────────────────────
   const sorted = [...nodes].sort((a, b) =>
-    b.cascade.size - a.cascade.size || b.weeklyDownloads - a.weeklyDownloads
+    b.cascade.size - a.cascade.size || b.totalDependents - a.totalDependents
   );
   const listEl = document.getElementById('threat-list');
   for (const n of sorted) {
@@ -305,6 +352,31 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     el.addEventListener('click', () => selectPackage(n.id));
     listEl.appendChild(el);
   }
+
+  // ── SEARCH ──────────────────────────────────────────────────────────────
+  const searchInput = document.getElementById('pkg-search');
+  const searchWrap  = document.getElementById('search-wrap');
+  function filterList() {
+    const q = searchInput.value.trim().toLowerCase();
+    searchWrap.classList.toggle('has-query', q.length > 0);
+    listEl.querySelectorAll('.threat-item').forEach(el => {
+      el.style.display = el.dataset.id.toLowerCase().includes(q) ? '' : 'none';
+    });
+  }
+  searchInput.addEventListener('input', filterList);
+  document.getElementById('search-clear').addEventListener('click', () => {
+    searchInput.value = '';
+    filterList();
+    searchInput.focus();
+  });
+  // Ctrl/Cmd+K focuses the search
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    }
+  });
 
   // ── D3 SETUP ──────────────────────────────────────────────────────────────
   const svg = d3.select('#graph');
@@ -475,12 +547,43 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     // external links
     const encodedId = encodeURIComponent(id);
     document.getElementById('ext-links').innerHTML =
-      `<a class="link-npmgraph" href="https://npmgraph.js.org/?q=${encodedId}" target="_blank" rel="noopener">npmgraph ↗</a>` +
-      `<a class="link-bundlephobia" href="https://bundlephobia.com/package/${encodedId}" target="_blank" rel="noopener">bundlephobia ↗</a>`;
-    document.getElementById('s-weekly').textContent  = fmt(n.weeklyDownloads ?? 0) + '/wk';
-    const daily = Math.round((n.weeklyDownloads ?? 0) / 7);
-    document.getElementById('s-daily').textContent   = fmt(daily) + '/day';
-    document.getElementById('s-hourly').textContent  = `~${fmt(Math.round(daily / 24))}/hr`;
+      `<a href="https://deps.dev/npm/${encodedId}" target="_blank" rel="noopener" style="font-weight:700;color:#2c3e50;">deps.dev ↗ <span style="font-weight:400;font-size:9px;color:#95a5a6;">(source)</span></a>` +
+      `<a href="https://www.npmjs.com/package/${encodedId}" target="_blank" rel="noopener">npm ↗</a>` +
+      `<a href="https://npmgraph.js.org/?q=${encodedId}" target="_blank" rel="noopener">npmgraph ↗</a>` +
+      `<a href="https://bundlephobia.com/package/${encodedId}" target="_blank" rel="noopener">bundlephobia ↗</a>`;
+
+    document.getElementById('dl-json-wrap').innerHTML =
+      `<a id="dl-json">⬇ Download cascade JSON</a>`;
+
+    document.getElementById('dl-json').addEventListener('click', () => {
+      const report = {
+        package: id,
+        version: n.version,
+        dependents: {
+          total: n.totalDependents ?? 0,
+          direct: n.directDependents ?? 0,
+          indirect: n.indirectDependents ?? 0,
+        },
+        cascadeSize: cascade.size,
+        maxDepth,
+        exposure: { auto: autoCount, needsUpdate: needCount, pinned: pinCount },
+        impacted: [...cascade.entries()].map(([name, v]) => ({
+          name,
+          depth: v.depth,
+          exposure: v.exposure,
+        })),
+      };
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${id}-cascade.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+    document.getElementById('s-total-deps').textContent   = fmt(n.totalDependents ?? 0);
+    document.getElementById('s-direct-deps').textContent  = fmt(n.directDependents ?? 0);
+    document.getElementById('s-indirect-deps').textContent = fmt(n.indirectDependents ?? 0);
     document.getElementById('s-r0').textContent      = `${cascade.size} packages`;
     document.getElementById('s-auto').textContent    = `${autoCount}`;
     document.getElementById('s-manual').textContent  = `${needCount}`;
@@ -505,8 +608,13 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   const qPkg = params.get('pkg');
   // only select if it matches a known package name (whitelist approach)
   if (qPkg && nodeMap.has(qPkg)) {
-    // wait for simulation to settle a bit before selecting
-    setTimeout(() => selectPackage(qPkg), 600);
+    // select once positions are roughly stable (alpha < 0.3 ≈ first ~1s)
+    sim.on('tick.qpkg', () => {
+      if (sim.alpha() < 0.3) {
+        sim.on('tick.qpkg', null);
+        selectPackage(qPkg);
+      }
+    });
   }
 });
 </script>
