@@ -593,7 +593,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     // nodes — labels only when zoomed in enough
     const showLabels = transform.k > 1.5;
     if (showLabels) {
-      ctx.font = `${11 / transform.k}px monospace`;
+      ctx.font = `${10 / transform.k}px monospace`;
       ctx.textBaseline = 'middle';
     }
 
@@ -654,7 +654,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     }
     _clickNode = best;
     if (best) {
-      _dragNode = best; sim.alphaTarget(0.3).restart();
+      _dragNode = best;
       best.fx = best.x; best.fy = best.y;
       e.stopPropagation(); // keep zoom from panning when dragging a node
     }
@@ -664,11 +664,12 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     const rect = canvas.getBoundingClientRect();
     _dragNode.fx = (e.clientX - rect.left - transform.x) / transform.k;
     _dragNode.fy = (e.clientY - rect.top  - transform.y) / transform.k;
+    draw(); // redraw manually — sim may have already cooled down
   });
   window.addEventListener('pointerup', e => {
     if (!_ptrDown) return;
     const wasDrag = Math.hypot(e.clientX - _ptrDown.x, e.clientY - _ptrDown.y) > 4;
-    if (_dragNode) { sim.alphaTarget(0); _dragNode.fx = null; _dragNode.fy = null; }
+    if (_dragNode) { _dragNode.fx = null; _dragNode.fy = null; draw(); }
     if (!wasDrag) {
       if (_clickNode) {
         selectPackage(_clickNode.id);
@@ -686,11 +687,11 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   });
 
   const sim = d3.forceSimulation(nodes)
-    .force('link',      d3.forceLink(links).id(d => d.id).distance(80).strength(0.25))
-    .force('charge',    d3.forceManyBody().strength(-100).distanceMax(180))
+    .force('link',      d3.forceLink(links).id(d => d.id).distance(100).strength(0.2))
+    .force('charge',    d3.forceManyBody().strength(-180).distanceMax(250))
     .force('x',         d3.forceX(width / 2).strength(0.04))
     .force('y',         d3.forceY(height / 2).strength(0.04))
-    .force('collision', d3.forceCollide().radius(8))
+    .force('collision', d3.forceCollide().radius(16))
     .alphaDecay(0.04)
     .velocityDecay(0.45);
 
