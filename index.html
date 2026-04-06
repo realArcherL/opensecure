@@ -130,7 +130,8 @@
 
     /* ── GRAPH ── */
     #graph-area { flex: 1; position: relative; overflow: hidden; }
-    svg { width: 100%; height: 100%; }
+    canvas#graph { width: 100%; height: 100%; display: block; cursor: grab; }
+    canvas#graph:active { cursor: grabbing; }
 
     /* ── STATS PANEL ── */
     #stats-panel {
@@ -260,12 +261,6 @@
     #scope-popup ul { margin: 0; padding-left: 14px; }
     #scope-popup li { margin-bottom: 4px; }
 
-    /* ── PULSE ANIMATION ── */
-    @keyframes pulse-purple {
-      0%, 100% { opacity: 0.5; }
-      50%      { opacity: 1; }
-    }
-    .pulse { animation: pulse-purple 2s ease-in-out infinite; }
 
   </style>
 </head>
@@ -290,7 +285,7 @@
 </div>
 
 <div id="graph-area">
-  <svg id="graph"></svg>
+  <canvas id="graph"></canvas>
 
   <div id="stats-panel">
     <div class="pkg-name" id="s-name"></div>
@@ -431,47 +426,74 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   document.getElementById('s-setsize').textContent = N;
   document.getElementById('exp-scope-count').textContent = N;
 
-  // precompute cascade sizes for sidebar ranking + node sizing
+  // cascades computed lazily/async — no blocking loop on startup
   const cascades = new Map();
-  for (const name of pkgNames) {
-    const infected = simulate(name, graph.isDependencyOf);
-    infected.delete(name);
-    cascades.set(name, infected);
-  }
+  let maxCascade = 1;
 
-  const maxCascade = Math.max(...[...cascades.values()].map(c => c.size), 1);
-
-  const nodes = pkgNames.map(name => ({
-    id: name,
-    ...graph.packages[name],
-    cascade: cascades.get(name),
-  }));
+  const nodes = pkgNames.map(name => ({ id: name, ...graph.packages[name] }));
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
-  // links from dependsOn (edges are now objects with .name)
+  // links from dependsOn
   const links = [];
   for (const [from, edges] of Object.entries(graph.dependsOn)) {
     for (const edge of edges) links.push({ source: from, target: edge.name });
   }
 
-  // ── SIDEBAR ───────────────────────────────────────────────────────────────
-  const sorted = [...nodes].sort((a, b) =>
-    b.cascade.size - a.cascade.size || b.totalDependents - a.totalDependents
-  );
+  // ── SIDEBAR (initial order by totalDependents; bars fill in async) ─────────
   const listEl = document.getElementById('threat-list');
-  for (const n of sorted) {
-    const pct = Math.round((n.cascade.size / maxCascade) * 100);
+  const initialSorted = [...nodes].sort((a, b) =>
+    (b.totalDependents ?? 0) - (a.totalDependents ?? 0)
+  );
+  for (const n of initialSorted) {
     const el = document.createElement('div');
     el.className = 'threat-item';
     el.dataset.id = n.id;
     el.innerHTML = `
-      <div class="size-bar"><div class="size-bar-fill" style="width:${pct}%"></div></div>
+      <div class="size-bar"><div class="size-bar-fill" style="width:0%"></div></div>
       <div class="name">${n.id}</div>
-      <div class="count">${n.cascade.size > 0 ? `+${n.cascade.size}` : '—'}</div>
+      <div class="count">…</div>
     `;
     el.addEventListener('click', () => selectPackage(n.id));
     listEl.appendChild(el);
   }
+
+  // Compute all cascades in background — 100 per frame, yield between chunks
+  (async () => {
+    const CHUNK = 100;
+    for (let i = 0; i < pkgNames.length; i += CHUNK) {
+      for (let j = i; j < Math.min(i + CHUNK, pkgNames.length); j++) {
+        const name = pkgNames[j];
+        if (cascades.has(name)) continue;
+        const infected = simulate(name, graph.isDependencyOf);
+        infected.delete(name);
+        cascades.set(name, infected);
+        if (infected.size > maxCascade) maxCascade = infected.size;
+      }
+      // update sidebar items for this chunk
+      for (let j = i; j < Math.min(i + CHUNK, pkgNames.length); j++) {
+        const name = pkgNames[j];
+        const size = cascades.get(name).size;
+        const item = listEl.querySelector(`.threat-item[data-id="${CSS.escape(name)}"]`);
+        if (item) {
+          item.querySelector('.size-bar-fill').style.width =
+            Math.round((size / maxCascade) * 100) + '%';
+          item.querySelector('.count').textContent = size > 0 ? `+${size}` : '—';
+        }
+      }
+      await new Promise(r => setTimeout(r, 0)); // yield to browser
+    }
+    // re-sort sidebar by cascade size and re-normalize bars
+    const allItems = [...listEl.querySelectorAll('.threat-item')];
+    allItems.sort((a, b) =>
+      (cascades.get(b.dataset.id)?.size ?? 0) - (cascades.get(a.dataset.id)?.size ?? 0)
+    );
+    allItems.forEach(el => listEl.appendChild(el));
+    for (const [name, c] of cascades) {
+      const item = listEl.querySelector(`.threat-item[data-id="${CSS.escape(name)}"]`);
+      if (item) item.querySelector('.size-bar-fill').style.width =
+        Math.round((c.size / maxCascade) * 100) + '%';
+    }
+  })();
 
   // ── SEARCH ──────────────────────────────────────────────────────────────
   const searchInput = document.getElementById('pkg-search');
@@ -498,98 +520,189 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     }
   });
 
-  // ── D3 SETUP ──────────────────────────────────────────────────────────────
-  const svg = d3.select('#graph');
-  const width  = document.getElementById('graph-area').clientWidth;
-  const height = document.getElementById('graph-area').clientHeight;
+  // ── CANVAS SETUP ──────────────────────────────────────────────────────────
+  const canvas = document.getElementById('graph');
+  const ctx = canvas.getContext('2d');
+  const graphAreaEl = document.getElementById('graph-area');
+  const dpr = window.devicePixelRatio || 1;
+  const width  = graphAreaEl.clientWidth;
+  const height = graphAreaEl.clientHeight;
+  canvas.width  = width  * dpr;
+  canvas.height = height * dpr;
+  canvas.style.width  = width  + 'px';
+  canvas.style.height = height + 'px';
 
-  // one glow filter reused for active nodes
-  const defs = svg.append('defs');
-  const glow = defs.append('filter').attr('id', 'glow').attr('x', '-30%').attr('y', '-30%').attr('width', '160%').attr('height', '160%');
-  glow.append('feDropShadow').attr('dx', '0').attr('dy', '0').attr('stdDeviation', '3').attr('flood-color', '#5b7ea8').attr('flood-opacity', '0.35');
+  const NODE_R = 6;
+  const hasDependents = new Set(
+    Object.keys(graph.isDependencyOf).filter(k => graph.isDependencyOf[k]?.length > 0)
+  );
 
-  // pulsating purple glow for nodes that have dependents (others depend on them)
-  const purpleGlow = defs.append('filter').attr('id', 'purple-glow').attr('x', '-50%').attr('y', '-50%').attr('width', '200%').attr('height', '200%');
-  purpleGlow.append('feDropShadow').attr('dx', '0').attr('dy', '0').attr('stdDeviation', '4').attr('flood-color', '#8e44ad').attr('flood-opacity', '0.5');
+  // render state
+  let selectedId = null;
+  let selectedCascade = null;   // Map<name, {depth, exposure}>
+  let revealedUpToDepth = Infinity;
 
-  // radial background gradient
-  const grad = defs.append('radialGradient').attr('id', 'bg').attr('cx', '50%').attr('cy', '50%').attr('r', '70%');
-  grad.append('stop').attr('offset', '0%').attr('stop-color', '#f5f7fa');
-  grad.append('stop').attr('offset', '100%').attr('stop-color', '#eaecf0');
-  svg.insert('rect', ':first-child').attr('width', '100%').attr('height', '100%').attr('fill', 'url(#bg)');
+  function draw() {
+    // base transform: DPR scaling so all coords are in CSS pixels
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    // radial background
+    const rg = ctx.createRadialGradient(
+      width / 2, height / 2, 0,
+      width / 2, height / 2, Math.max(width, height) * 0.7
+    );
+    rg.addColorStop(0, '#f5f7fa');
+    rg.addColorStop(1, '#eaecf0');
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.save();
+    ctx.translate(transform.x, transform.y);
+    ctx.scale(transform.k, transform.k);
+    const lw = 1 / transform.k;
+
+    // dim links
+    ctx.beginPath();
+    ctx.strokeStyle = selectedCascade ? 'rgba(0,0,0,0.025)' : 'rgba(0,0,0,0.05)';
+    ctx.lineWidth = lw;
+    for (const l of links) {
+      if (l.source.x == null || l.target.x == null) continue;
+      ctx.moveTo(l.source.x, l.source.y);
+      ctx.lineTo(l.target.x, l.target.y);
+    }
+    ctx.stroke();
+
+    // highlighted cascade links
+    if (selectedCascade && selectedId) {
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+      ctx.lineWidth = lw;
+      for (const l of links) {
+        if (l.source.x == null || l.target.x == null) continue;
+        const sId = l.source.id, tId = l.target.id;
+        if ((selectedCascade.has(sId) || sId === selectedId) &&
+            (selectedCascade.has(tId) || tId === selectedId)) {
+          ctx.moveTo(l.source.x, l.source.y);
+          ctx.lineTo(l.target.x, l.target.y);
+        }
+      }
+      ctx.stroke();
+    }
+
+    // nodes — labels only when zoomed in enough
+    const showLabels = transform.k > 1.5;
+    if (showLabels) {
+      ctx.font = `${11 / transform.k}px monospace`;
+      ctx.textBaseline = 'middle';
+    }
+
+    for (const n of nodes) {
+      if (n.x == null) continue;
+      const isSelected = n.id === selectedId;
+      const entry = selectedCascade?.get(n.id);
+      const revealed = entry && entry.depth <= revealedUpToDepth;
+      const dimmed = selectedCascade && !revealed && !isSelected;
+      const r = isSelected ? NODE_R * 2 : NODE_R;
+
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+      if (dimmed) {
+        ctx.fillStyle = 'rgba(0,0,0,0.015)'; ctx.strokeStyle = '#ccc'; ctx.lineWidth = lw;
+      } else if (isSelected) {
+        ctx.fillStyle = '#8e44ad22'; ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 2.5 / transform.k;
+      } else if (revealed) {
+        const c = exposureColor(entry.exposure);
+        ctx.fillStyle = c + '44'; ctx.strokeStyle = c; ctx.lineWidth = lw;
+      } else if (!selectedCascade && hasDependents.has(n.id)) {
+        ctx.fillStyle = '#8e44ad22'; ctx.strokeStyle = '#8e44ad'; ctx.lineWidth = lw;
+      } else {
+        ctx.fillStyle = NODE_BASE + '33'; ctx.strokeStyle = NODE_BASE; ctx.lineWidth = lw;
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      if (showLabels && !dimmed) {
+        ctx.fillStyle = '#7f8c8d';
+        ctx.fillText(n.id, n.x + r + 3 / transform.k, n.y);
+      }
+    }
+    ctx.restore();
+  }
+
+  // zoom/pan
+  let transform = d3.zoomIdentity;
+  const zoom = d3.zoom().scaleExtent([0.15, 5]).on('zoom', e => {
+    transform = e.transform;
+    draw();
+  });
+  d3.select(canvas).call(zoom);
+
+  // node drag + click via pointer events
+  let _dragNode = null, _clickNode = null, _ptrDown = null;
+  canvas.addEventListener('pointerdown', e => {
+    _ptrDown = { x: e.clientX, y: e.clientY };
+    const rect = canvas.getBoundingClientRect();
+    const wx = (e.clientX - rect.left - transform.x) / transform.k;
+    const wy = (e.clientY - rect.top  - transform.y) / transform.k;
+    const thr = (12 / transform.k) ** 2;
+    let best = null, bestD = Infinity;
+    for (const n of nodes) {
+      if (n.x == null) continue;
+      const d = (n.x - wx) ** 2 + (n.y - wy) ** 2;
+      if (d < thr && d < bestD) { bestD = d; best = n; }
+    }
+    _clickNode = best;
+    if (best) {
+      _dragNode = best; sim.alphaTarget(0.3).restart();
+      best.fx = best.x; best.fy = best.y;
+      e.stopPropagation(); // keep zoom from panning when dragging a node
+    }
+  }, { capture: true });
+  window.addEventListener('pointermove', e => {
+    if (!_dragNode) return;
+    const rect = canvas.getBoundingClientRect();
+    _dragNode.fx = (e.clientX - rect.left - transform.x) / transform.k;
+    _dragNode.fy = (e.clientY - rect.top  - transform.y) / transform.k;
+  });
+  window.addEventListener('pointerup', e => {
+    if (!_ptrDown) return;
+    const wasDrag = Math.hypot(e.clientX - _ptrDown.x, e.clientY - _ptrDown.y) > 4;
+    if (_dragNode) { sim.alphaTarget(0); _dragNode.fx = null; _dragNode.fy = null; }
+    if (!wasDrag) {
+      if (_clickNode) {
+        selectPackage(_clickNode.id);
+      } else {
+        reset();
+        document.getElementById('stats-panel').classList.remove('visible');
+        document.getElementById('explainer-box').classList.remove('visible');
+        document.querySelectorAll('.threat-item').forEach(el => el.classList.remove('active'));
+        const url = new URL(window.location);
+        url.searchParams.delete('pkg');
+        window.history.replaceState(null, '', url);
+      }
+    }
+    _dragNode = null; _clickNode = null; _ptrDown = null;
+  });
 
   const sim = d3.forceSimulation(nodes)
     .force('link',      d3.forceLink(links).id(d => d.id).distance(80).strength(0.25))
-    .force('charge',    d3.forceManyBody().strength(-160))
-    .force('center',    d3.forceCenter(width / 2, height / 2))
-    .force('collision', d3.forceCollide().radius(8));
+    .force('charge',    d3.forceManyBody().strength(-100).distanceMax(180))
+    .force('x',         d3.forceX(width / 2).strength(0.04))
+    .force('y',         d3.forceY(height / 2).strength(0.04))
+    .force('collision', d3.forceCollide().radius(8))
+    .alphaDecay(0.04)
+    .velocityDecay(0.45);
 
-  const g = svg.append('g');
-  const zoom = d3.zoom().scaleExtent([0.15, 5]).on('zoom', e => g.attr('transform', e.transform));
-  svg.call(zoom);
-
-  const link = g.append('g').selectAll('line')
-    .data(links).join('line')
-    .attr('stroke', '#0000000d')
-    .attr('stroke-width', 1);
-
-  const node = g.append('g').selectAll('g')
-    .data(nodes).join('g')
-    .style('cursor', 'pointer')
-    .call(d3.drag()
-      .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-      .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
-      .on('end',   (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
-    )
-    .on('click', (e, d) => selectPackage(d.id));
-
-  const NODE_R = 6;
-  const hasDependents = new Set(Object.keys(graph.isDependencyOf).filter(k => graph.isDependencyOf[k]?.length > 0));
-
-  node.append('circle')
-    .attr('r',            NODE_R)
-    .attr('fill',         d => hasDependents.has(d.id) ? '#8e44ad22' : NODE_BASE + '33')
-    .attr('stroke',       d => hasDependents.has(d.id) ? '#8e44ad' : NODE_BASE)
-    .attr('stroke-width', 1)
-    .attr('filter',       d => hasDependents.has(d.id) ? 'url(#purple-glow)' : null)
-    .classed('pulse',     d => hasDependents.has(d.id));
-
-  node.append('text')
-    .attr('x', NODE_R + 3)
-    .attr('y', 4)
-    .attr('fill', '#7f8c8d')
-    .attr('font-size', '8px')
-    .attr('font-family', 'monospace')
-    .text(d => d.id);
-
-  sim.on('tick', () => {
-    link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
-    node.attr('transform', d => `translate(${d.x},${d.y})`);
-  });
+  sim.on('tick', draw);
 
   // ── SELECT ────────────────────────────────────────────────────────────────
   function reset() {
-    node.select('circle')
-      .transition().duration(200)
-      .attr('r',      NODE_R)
-      .attr('fill',   d => hasDependents.has(d.id) ? '#8e44ad22' : NODE_BASE + '33')
-      .attr('stroke', d => hasDependents.has(d.id) ? '#8e44ad' : NODE_BASE)
-      .attr('opacity', 1)
-      .attr('filter', d => hasDependents.has(d.id) ? 'url(#purple-glow)' : null);
-    node.select('circle').classed('pulse', d => hasDependents.has(d.id));
-    node.select('text').attr('fill', '#7f8c8d');
-    link.attr('stroke', '#0000000d');
+    selectedId = null;
+    selectedCascade = null;
+    revealedUpToDepth = Infinity;
+    draw();
   }
-
-  svg.on('click', (e) => {
-    if (e.target.tagName === 'svg' || e.target.tagName === 'rect') {
-      reset();
-      document.getElementById('stats-panel').classList.remove('visible');
-      document.getElementById('explainer-box').classList.remove('visible');
-      document.querySelectorAll('.threat-item').forEach(el => el.classList.remove('active'));
-    }
-  });
 
   function selectPackage(id) {
     // update URL query param without reload
@@ -603,41 +716,34 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       ?.scrollIntoView({ block: 'nearest' });
 
     const n = nodeMap.get(id);
-    const infected = simulate(id, graph.isDependencyOf);
+
+    // use precomputed cascade if available, else compute on demand
+    let cascade;
+    if (cascades.has(id)) {
+      cascade = cascades.get(id);
+    } else {
+      const infected = simulate(id, graph.isDependencyOf);
+      infected.delete(id);
+      cascades.set(id, infected);
+      cascade = infected;
+    }
+
     const byDepth = new Map();
-    for (const [name, v] of infected) {
+    for (const [name, v] of cascade) {
       if (!byDepth.has(v.depth)) byDepth.set(v.depth, []);
       byDepth.get(v.depth).push(name);
     }
-
-    infected.delete(id);
-    const cascade = infected;
 
     const maxDepth  = Math.max(0, ...[...cascade.values()].map(v => v.depth));
     const autoCount = [...cascade.values()].filter(v => v.exposure === 'auto').length;
     const needCount = [...cascade.values()].filter(v => v.exposure === 'needs-update').length;
     const pinCount  = [...cascade.values()].filter(v => v.exposure === 'pinned').length;
 
-    // stop all pulsing on selection
-    node.select('circle').classed('pulse', false);
-
-    // dim unaffected, highlight affected
-    node.select('circle')
-      .attr('r',       d => d.id === id ? NODE_R * 2 : NODE_R)
-      .attr('opacity', d => cascade.has(d.id) || d.id === id ? 1 : 0.06)
-      .attr('filter',  d => cascade.has(d.id) || d.id === id ? 'url(#glow)' : null);
-    node.select('text')
-      .attr('fill', d => cascade.has(d.id) || d.id === id ? '#2c3e50' : '#d5dbdb');
-
-    link.attr('stroke', l => {
-      const s = l.source.id ?? l.source, t = l.target.id ?? l.target;
-      return (cascade.has(s) || s === id) && (cascade.has(t) || t === id)
-        ? '#00000030' : '#00000006';
-    });
-
-    // selected node — same transparent fill, yellow border
-    node.select('circle').filter(d => d.id === id)
-      .attr('fill', '#8e44ad22').attr('stroke', '#f1c40f').attr('stroke-width', 2.5);
+    // update canvas render state
+    selectedId = id;
+    selectedCascade = cascade;
+    revealedUpToDepth = 0;
+    draw();
 
     // pan & zoom to the selected node
     const selNode = nodes.find(d => d.id === id);
@@ -645,19 +751,17 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       const scale = 1.8;
       const tx = width / 2 - selNode.x * scale;
       const ty = height / 2 - selNode.y * scale;
-      svg.transition().duration(500)
+      d3.select(canvas).transition().duration(500)
         .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
     }
 
-    // animate cascade hop by hop
-    for (const [depth, names] of [...byDepth.entries()].filter(([d]) => d > 0)) {
-      setTimeout(() => {
-        node.select('circle').filter(d => names.includes(d.id))
-          .transition().duration(250)
-          .attr('fill',   d => exposureColor(cascade.get(d.id)?.exposure) + '44')
-          .attr('stroke', d => exposureColor(cascade.get(d.id)?.exposure));
-      }, depth * 220);
+    // animate cascade hop by hop — O(1) depth check per node (no includes())
+    const depths = [...byDepth.keys()].filter(d => d > 0).sort((a, b) => a - b);
+    const maxAnimDepth = depths.length > 0 ? depths[depths.length - 1] : 0;
+    for (const depth of depths) {
+      setTimeout(() => { revealedUpToDepth = depth; draw(); }, depth * 220);
     }
+    setTimeout(() => { revealedUpToDepth = Infinity; draw(); }, (maxAnimDepth + 1) * 220);
 
     // stats
     document.getElementById('stats-panel').classList.add('visible');
