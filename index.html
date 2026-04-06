@@ -343,7 +343,7 @@
     <li>Scoped to the top-<span id="exp-scope-count"></span> popular npm packages. Real blast radius extends beyond this graph.</li>
     <li>Uses latest version dependency trees. Pinned older versions may have different dependencies.</li>
     <li>Models a fresh <code>npm install</code> (no lockfile). Existing lockfiles prevent auto-pull until updated.</li>
-    <li>Does not distinguish devDependencies from runtime — build-time compromise is still a supply chain risk.</li>
+    <li>Excludes devDependencies — packages used only during development/testing are not modeled as propagation vectors.</li>
   </ul>
 </div>
 
