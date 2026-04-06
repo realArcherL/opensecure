@@ -276,7 +276,6 @@
     <h1>Blast Radius</h1>
     <span class="title-links">
       <a href="https://github.com/realArcherL/opensecure" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://realarcherl.github.io/posts/npm_security/" target="_blank" rel="noopener">Blog</a>
     </span>
   </div>
   <header>
@@ -737,24 +736,49 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     }
 
     function renderSection(el, color, label, desc, examples, count) {
+      el.innerHTML = '';
+
+      const header = document.createElement('div');
+      header.className = 'exp-header';
+      header.innerHTML = `<span class="exp-dot" style="background:${color}"></span><span style="color:${color}">${label}</span>${count > 0 ? ` <span style="color:#95a5a6;font-weight:400;font-size:10px;">(${count})</span>` : ''}`;
+      el.appendChild(header);
+
       if (count === 0) {
-        el.innerHTML = `
-          <div class="exp-header"><span class="exp-dot" style="background:${color}"></span><span style="color:${color}">${label}</span></div>
-          <div class="exp-none">None in this cascade</div>`;
+        const none = document.createElement('div');
+        none.className = 'exp-none';
+        none.textContent = 'None in this cascade';
+        el.appendChild(none);
         return;
       }
-      const ex = examples[0]
-        ? `<div style="margin-top:4px;font-size:10px;color:#5d6d7e;">example: <span class="exp-example" style="background:${color}12;color:${color}">"${id}": "${examples[0].req}"</span> <span style="font-size:9px;color:#95a5a6;">in ${examples[0].name}</span></div>`
-        : '';
-      el.innerHTML = `
-        <div class="exp-header"><span class="exp-dot" style="background:${color}"></span><span style="color:${color}">${label}</span> <span style="color:#95a5a6;font-weight:400;font-size:10px;">(${count})</span></div>
-        <div class="exp-desc">${desc}</div>
-        ${ex}`;
+
+      const descEl = document.createElement('div');
+      descEl.className = 'exp-desc';
+      descEl.innerHTML = desc;
+      el.appendChild(descEl);
+
+      if (examples[0]) {
+        const exDiv = document.createElement('div');
+        exDiv.style.cssText = 'margin-top:4px;font-size:10px;color:#5d6d7e;';
+        exDiv.appendChild(document.createTextNode('example: '));
+
+        const exSpan = document.createElement('span');
+        exSpan.className = 'exp-example';
+        exSpan.style.cssText = `background:${color}12;color:${color}`;
+        exSpan.textContent = `"${id}": "${examples[0].req}"`;
+        exDiv.appendChild(exSpan);
+
+        const inSpan = document.createElement('span');
+        inSpan.style.cssText = 'font-size:9px;color:#95a5a6;';
+        inSpan.textContent = ` in ${examples[0].name}`;
+        exDiv.appendChild(inSpan);
+
+        el.appendChild(exDiv);
+      }
     }
 
     renderSection(
-      document.getElementById('exp-auto'), AUTO_COLOR, 'Auto-pull', 
-      `Their <code>package.json</code> has a range like <code>${autoEx[0]?.req ?? '^x.y.z'}</code>. Running <code>npm i</code> will silently pull in the compromised version.`, 
+      document.getElementById('exp-auto'), AUTO_COLOR, 'Auto-pull',
+      'Their <code>package.json</code> has a semver range like <code>^x.y.z</code>. Running <code>npm i</code> will silently pull in the compromised version.',
       autoEx, autoCount
     );
     renderSection(
@@ -764,13 +788,16 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     );
     renderSection(
       document.getElementById('exp-pinned'), PIN_COLOR, 'Pinned',
-      `Their <code>package.json</code> has an exact version like <code>${pinEx[0]?.req ?? 'x.y.z'}</code>. Safe unless someone manually bumps it.`,
+      'Their <code>package.json</code> pins an exact version like <code>x.y.z</code>. Safe unless someone manually bumps it.',
       pinEx, pinCount
     );
 
     const expBox = document.getElementById('explainer-box');
     expBox.classList.toggle('visible', cascade.size > 0);
-    document.getElementById('exp-heading').innerHTML = `What if <code>${id}</code> is compromised?`;
+
+    const heading = document.getElementById('exp-heading');
+    heading.innerHTML = 'What if <code></code> is compromised?';
+    heading.querySelector('code').textContent = id;
   }
 
   // ── QUERY PARAM SELECTION ────────────────────────────────────────────────
