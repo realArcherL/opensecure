@@ -1016,6 +1016,68 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       `<a href="https://npmgraph.js.org/?q=${encodedId}" target="_blank" rel="noopener">npmgraph ↗</a>` +
       `<a href="https://bundlephobia.com/package/${encodedId}" target="_blank" rel="noopener">bundlephobia ↗</a>`;
 
+    function buildCascadeHopGroups(rootId, cascadeMap) {
+      const reachable = new Set([rootId, ...cascadeMap.keys()]);
+      const parentByNode = new Map();
+      const reqByNode = new Map();
+      const queue = [rootId];
+
+      // BFS to capture one deterministic parent path per impacted package.
+      while (queue.length) {
+        const cur = queue.shift();
+        const nextEdges = [...(graph.isDependencyOf[cur] ?? [])]
+          .filter(edge => reachable.has(edge.name))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        for (const edge of nextEdges) {
+          const child = edge.name;
+          if (child === rootId || parentByNode.has(child)) continue;
+          parentByNode.set(child, cur);
+          reqByNode.set(child, edge.requirement ?? '*');
+          queue.push(child);
+        }
+      }
+
+      const entries = [...cascadeMap.entries()].sort((a, b) =>
+        a[1].depth - b[1].depth || a[0].localeCompare(b[0])
+      );
+      const hops = new Map();
+
+      for (const [name, info] of entries) {
+        const path = [name];
+        let cur = name;
+        while (cur !== rootId && parentByNode.has(cur)) {
+          cur = parentByNode.get(cur);
+          path.push(cur);
+          if (path.length > reachable.size + 2) break;
+        }
+        if (path[path.length - 1] !== rootId) path.push(rootId);
+        path.reverse();
+
+        const via = path.length > 1 ? path[path.length - 2] : rootId;
+        const requirement = reqByNode.get(name) ?? '*';
+
+        if (!hops.has(info.depth)) {
+          hops.set(info.depth, { hop: info.depth, count: 0, auto: 0, pinned: 0, packages: [] });
+        }
+        const hopGroup = hops.get(info.depth);
+        hopGroup.count += 1;
+        hopGroup[info.exposure] += 1;
+        hopGroup.packages.push({
+          name,
+          exposure: info.exposure,
+          via,
+          requirement,
+          path,
+          pathText: path.join(' -> '),
+        });
+      }
+
+      return [...hops.values()].sort((a, b) => a.hop - b.hop);
+    }
+
+    const cascadeHops = buildCascadeHopGroups(id, cascade);
+
     document.getElementById('dl-json-wrap').innerHTML =
       `<a id="dl-json">⬇ Download cascade JSON</a>`;
 
@@ -1031,11 +1093,13 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
         cascadeSize: cascade.size,
         maxDepth,
         exposure: { auto: autoCount, pinned: pinCount },
-        impacted: [...cascade.entries()].map(([name, v]) => ({
-          name,
-          depth: v.depth,
-          exposure: v.exposure,
+        hopSummary: cascadeHops.map(({ hop, count, auto, pinned }) => ({
+          hop,
+          count,
+          auto,
+          pinned,
         })),
+        cascadeHops,
       };
       const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
