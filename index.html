@@ -164,6 +164,40 @@
       padding: 1px 4px;
       border-radius: 3px;
     }
+    #focus-panel {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      max-width: 320px;
+      padding: 8px 10px;
+      background: rgba(238,243,248,0.96);
+      border: 1px solid #d9e3ee;
+      border-radius: 6px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      color: #34495e;
+      z-index: 9;
+      display: none;
+      pointer-events: none;
+      transition: all 0.2s ease;
+    }
+    #focus-panel .focus-full {
+      font-size: 10px;
+      line-height: 1.4;
+    }
+    #focus-panel .focus-mini {
+      display: none;
+      font-size: 10px;
+      font-weight: 600;
+      font-family: monospace;
+      letter-spacing: 0.01em;
+    }
+    #focus-panel.minimized {
+      max-width: 140px;
+      padding: 5px 8px;
+      background: rgba(238,243,248,0.92);
+    }
+    #focus-panel.minimized .focus-full { display: none; }
+    #focus-panel.minimized .focus-mini { display: block; }
     .stat-row {
       display: flex; justify-content: space-between; align-items: baseline;
       padding: 4px 0; border-bottom: 1px solid #ecf0f1;
@@ -299,6 +333,10 @@
 
 <div id="graph-area">
   <canvas id="graph"></canvas>
+  <div id="focus-panel" aria-live="polite">
+    <div id="focus-panel-full" class="focus-full"></div>
+    <div id="focus-panel-mini" class="focus-mini"></div>
+  </div>
 
   <div id="stats-panel">
     <div class="pkg-name" id="s-name"></div>
@@ -534,8 +572,10 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   let focusedNeighborIds = new Set();
   let lastNodeClick = { id: null, at: 0 };
   const DOUBLE_CLICK_MS = 350;
+  const FOCUS_MINIMIZE_MS = 10000;
   let fitScaleForCurrentView = 1;
   const DETAIL_HIDE_ZOOM_RATIO = 0.96;
+  let focusPanelTimer = null;
 
   let transform = d3.zoomIdentity;
 
@@ -552,9 +592,44 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     pending:        { fill: 'rgba(0,0,0,0.03)',       stroke: '#ddd'    },
   };
 
+  function hideFocusPanel() {
+    const panel = document.getElementById('focus-panel');
+    const full = document.getElementById('focus-panel-full');
+    const mini = document.getElementById('focus-panel-mini');
+    if (focusPanelTimer) {
+      clearTimeout(focusPanelTimer);
+      focusPanelTimer = null;
+    }
+    if (panel) {
+      panel.style.display = 'none';
+      panel.classList.remove('minimized');
+    }
+    if (full) full.textContent = '';
+    if (mini) mini.textContent = '';
+  }
+
+  function showFocusPanel(id) {
+    const panel = document.getElementById('focus-panel');
+    const full = document.getElementById('focus-panel-full');
+    const mini = document.getElementById('focus-panel-mini');
+    if (!panel || !full || !mini) return;
+
+    full.textContent = `Focus: ${id}. Only immediate dependencies and dependents are highlighted.`;
+    mini.textContent = `Focus: ${id}`;
+    panel.classList.remove('minimized');
+    panel.style.display = 'block';
+
+    if (focusPanelTimer) clearTimeout(focusPanelTimer);
+    focusPanelTimer = setTimeout(() => {
+      panel.classList.add('minimized');
+      focusPanelTimer = null;
+    }, FOCUS_MINIMIZE_MS);
+  }
+
   function clearNodeFocus() {
     focusedNodeId = null;
     focusedNeighborIds = new Set();
+    hideFocusPanel();
   }
 
   function setNodeFocus(id) {
@@ -565,6 +640,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       if (l.target.id === id) neighbors.add(l.source.id);
     }
     focusedNeighborIds = neighbors;
+    showFocusPanel(id);
   }
 
   function draw() {
