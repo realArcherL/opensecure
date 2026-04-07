@@ -133,16 +133,25 @@
     canvas#graph { width: 100%; height: 100%; display: block; cursor: grab; }
     canvas#graph:active { cursor: grabbing; }
 
-    /* ── STATS PANEL ── */
-    #stats-panel {
-      position: absolute; top: 16px; right: 16px;
+    /* ── RIGHT STACK (STATS + LEGEND) ── */
+    #right-stack {
+      position: absolute;
+      top: 16px;
+      right: 16px;
       width: 230px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #stats-panel {
+      width: 100%;
       background: rgba(255,255,255,0.97);
       border: 1px solid #d5d8dc;
       border-radius: 6px;
       box-shadow: 0 2px 12px rgba(0,0,0,0.08);
       padding: 14px;
-      display: none; z-index: 10;
+      display: none;
     }
     #stats-panel.visible { display: block; }
     #stats-panel .pkg-name {
@@ -225,22 +234,44 @@
       margin-top: 8px; padding-top: 8px; border-top: 1px solid #ecf0f1;
     }
     #dl-json-wrap a { font-size: 11px; }
+    #legend-bar {
+      width: 100%;
+      background: rgba(255,255,255,0.97);
+      border: 1px solid #d5d8dc;
+      border-radius: 6px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      padding: 10px 12px;
+      display: none;
+      overflow-x: hidden;
+      overflow-y: auto;
+      max-height: 30vh;
+    }
+    #legend-bar.visible { display: block; }
     #stats-explainer {
-      margin-top: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 0;
       padding-top: 0;
     }
 
     /* narrow screens */
     @media (max-width: 900px) {
+      #right-stack {
+        right: 8px;
+        width: min(92vw, 260px);
+      }
       #stats-panel {
         max-height: 45vh;
         overflow-y: auto;
       }
+      #legend-bar {
+        max-height: 34vh;
+      }
     }
-    .exp-section { margin-bottom: 10px; }
-    .exp-section:last-child { margin-bottom: 0; }
+    .exp-section { margin-bottom: 0; }
     .exp-header {
-      display: flex; align-items: center; gap: 6px;
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
       font-weight: 600; font-size: 11px; margin-bottom: 4px;
     }
     .exp-dot {
@@ -249,11 +280,15 @@
     }
     .exp-desc {
       font-size: 10px; color: #7f8c8d; line-height: 1.5; margin-bottom: 4px;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .exp-example {
       font-family: monospace; font-size: 10px;
-      padding: 4px 8px; border-radius: 4px;
-      display: inline-block;
+      display: inline;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .exp-none {
       font-size: 10px; color: #bdc3c7; font-style: italic;
@@ -338,50 +373,50 @@
     <div id="focus-panel-mini" class="focus-mini"></div>
   </div>
 
-  <div id="stats-panel">
-    <div class="pkg-name" id="s-name"></div>
-    <div class="pkg-version" id="s-version"></div>
-    <div class="pkg-whatif" id="s-whatif">What if <code></code> is compromised?</div>
-    <div class="stat-row" title="Total packages that depend on this (direct + indirect)">
-      <span class="stat-label">Total dependents</span>
-      <span class="stat-value" id="s-total-deps"></span>
+  <div id="right-stack">
+    <div id="stats-panel">
+      <div class="pkg-name" id="s-name"></div>
+      <div class="pkg-version" id="s-version"></div>
+      <div class="pkg-whatif" id="s-whatif">What if <code></code> is compromised?</div>
+      <div class="stat-row" title="Total packages that depend on this (direct + indirect)">
+        <span class="stat-label">Total dependents</span>
+        <span class="stat-value" id="s-total-deps"></span>
+      </div>
+      <div class="stat-row" title="Packages that directly list this as a dependency">
+        <span class="stat-label">Direct dependents</span>
+        <span class="stat-value" id="s-direct-deps"></span>
+      </div>
+      <div class="stat-row" title="Packages that transitively depend on this">
+        <span class="stat-label">Indirect dependents</span>
+        <span class="stat-value" id="s-indirect-deps"></span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Cascade (top-<span id="s-setsize"></span>)</span>
+        <span class="stat-value" id="s-r0"></span>
+      </div>
+      <div class="stat-row" title="^ ~ >= ranges — pulled in on next npm install">
+        <span class="stat-label">Auto-pull</span>
+        <span class="stat-value" id="s-auto" style="color:#c0392b"></span>
+      </div>
+      <div class="stat-row" title="Exact version pins — safe unless someone deliberately updates">
+        <span class="stat-label">Pinned</span>
+        <span class="stat-value" id="s-pinned" style="color:#27ae60"></span>
+      </div>
+      <div class="stat-row no-divider">
+        <span class="stat-label">Max depth</span>
+        <span class="stat-value" id="s-depth"></span>
+      </div>
+      <div id="verdict"></div>
+      <div id="ext-links"></div>
+      <div id="dl-json-wrap"></div>
     </div>
-    <div class="stat-row" title="Packages that directly list this as a dependency">
-      <span class="stat-label">Direct dependents</span>
-      <span class="stat-value" id="s-direct-deps"></span>
+
+    <div id="legend-bar">
+      <div id="stats-explainer">
+        <div id="exp-auto" class="exp-section"></div>
+        <div id="exp-pinned" class="exp-section"></div>
+      </div>
     </div>
-    <div class="stat-row" title="Packages that transitively depend on this">
-      <span class="stat-label">Indirect dependents</span>
-      <span class="stat-value" id="s-indirect-deps"></span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">Cascade (top-<span id="s-setsize"></span>)</span>
-      <span class="stat-value" id="s-r0"></span>
-    </div>
-    <div class="stat-row" title="^ ~ >= ranges — pulled in on next npm install">
-      <span class="stat-label">Auto-pull</span>
-      <span class="stat-value" id="s-auto" style="color:#c0392b"></span>
-    </div>
-    <div class="stat-row" title="In the dep chain but requires deliberate npm update">
-      <span class="stat-label">Needs update</span>
-      <span class="stat-value" id="s-manual" style="color:#e67e22"></span>
-    </div>
-    <div class="stat-row" title="Exact version pins — safe unless someone deliberately updates">
-      <span class="stat-label">Pinned</span>
-      <span class="stat-value" id="s-pinned" style="color:#27ae60"></span>
-    </div>
-    <div class="stat-row no-divider">
-      <span class="stat-label">Max depth</span>
-      <span class="stat-value" id="s-depth"></span>
-    </div>
-    <div id="stats-explainer">
-      <div id="exp-auto" class="exp-section"></div>
-      <div id="exp-needs" class="exp-section"></div>
-      <div id="exp-pinned" class="exp-section"></div>
-    </div>
-    <div id="verdict"></div>
-    <div id="ext-links"></div>
-    <div id="dl-json-wrap"></div>
   </div>
 
 </div>
@@ -415,29 +450,18 @@ document.addEventListener('click', (e) => {
   }
 });
 
-const NODE_BASE  = '#5b7ea8';
-const NODE_DIM   = '#bdc3c7';
 const AUTO_COLOR = '#c0392b';
-const NEED_COLOR = '#e67e22';
 const PIN_COLOR  = '#27ae60';
-const COMP_COLOR = '#c0392b';
 
-// three exposure types: auto, needs-update, pinned
+// two exposure types: auto, pinned
 function exposureType(req) {
   const r = (req ?? '*').trim();
   if (!r || r === '*' || r === 'latest') return 'auto';
   if (r.startsWith('^') || r.startsWith('~') || r.startsWith('>')) return 'auto';
   // bare numbers: "1", "1.4", "1.x", "1.x.x", "1.*" → npm treats as range (>=1.0.0 <2.0.0)
   if (/^\d+(\.(x|\*|\d+))?(\.x|\.\*)?$/.test(r) && !/^\d+\.\d+\.\d+$/.test(r)) return 'auto';
-  // exact pin: 1.4.0
-  if (/^\d+\.\d+\.\d+$/.test(r)) return 'pinned';
-  return 'needs-update';
-}
-
-function exposureColor(type) {
-  if (type === 'auto')         return AUTO_COLOR;
-  if (type === 'needs-update') return NEED_COLOR;
-  return PIN_COLOR;
+  // everything else requires explicit bump behavior in this UI model
+  return 'pinned';
 }
 
 function simulate(pkg, isDependencyOf) {
@@ -586,7 +610,6 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
   const COLORS = {
     auto:           { fill: 'rgba(192,57,43,0.27)',  stroke: '#c0392b' },
-    'needs-update': { fill: 'rgba(230,126,34,0.27)', stroke: '#e67e22' },
     pinned:         { fill: 'rgba(39,174,96,0.27)',  stroke: '#27ae60' },
     root:           { fill: 'rgba(142,68,173,0.13)', stroke: '#f1c40f' },
     pending:        { fill: 'rgba(0,0,0,0.03)',       stroke: '#ddd'    },
@@ -624,6 +647,20 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       panel.classList.add('minimized');
       focusPanelTimer = null;
     }, FOCUS_MINIMIZE_MS);
+  }
+
+  function syncUrlPackage(pkgId, mode = 'push') {
+    const url = new URL(window.location);
+    if (pkgId) {
+      const current = url.searchParams.get('pkg');
+      if (mode === 'push' && current === pkgId) return;
+      url.searchParams.set('pkg', pkgId);
+    } else {
+      if (!url.searchParams.has('pkg')) return;
+      url.searchParams.delete('pkg');
+    }
+    if (mode === 'replace') window.history.replaceState(null, '', url);
+    else window.history.pushState(null, '', url);
   }
 
   function clearNodeFocus() {
@@ -800,7 +837,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
   // tooltip — distance-based hit test
   const tooltip = document.getElementById('node-tooltip');
-  const expLabel = { auto: 'auto-pull', 'needs-update': 'needs update', pinned: 'pinned' };
+  const expLabel = { auto: 'auto-pull', pinned: 'pinned' };
   function hitTest(wx, wy) {
     const thr = (NODE_R * 2.5) ** 2;
     for (const n of subNodes) {
@@ -863,9 +900,13 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   });
 
   // ── SELECT ────────────────────────────────────────────────────────────────
-  function reset() {
+  function reset({ updateHistory = false, historyMode = 'replace' } = {}) {
+    if (updateHistory) syncUrlPackage(null, historyMode);
     subNodes = []; subLinks = []; depthRings = [];
     selectedId = null; selectedCascade = null;
+    document.querySelectorAll('.threat-item').forEach(el => el.classList.remove('active'));
+    document.getElementById('stats-panel').classList.remove('visible');
+    document.getElementById('legend-bar').classList.remove('visible');
     clearNodeFocus();
     lastNodeClick = { id: null, at: 0 };
     fitScaleForCurrentView = 1;
@@ -874,10 +915,8 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     draw();
   }
 
-  function selectPackage(id) {
-    const url = new URL(window.location);
-    url.searchParams.set('pkg', id);
-    window.history.replaceState(null, '', url);
+  function selectPackage(id, { updateHistory = true, historyMode = 'push' } = {}) {
+    if (updateHistory) syncUrlPackage(id, historyMode);
 
     document.querySelectorAll('.threat-item').forEach(el =>
       el.classList.toggle('active', el.dataset.id === id));
@@ -891,7 +930,6 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
     const maxDepth  = Math.max(0, ...[...cascade.values()].map(v => v.depth));
     const autoCount = [...cascade.values()].filter(v => v.exposure === 'auto').length;
-    const needCount = [...cascade.values()].filter(v => v.exposure === 'needs-update').length;
     const pinCount  = [...cascade.values()].filter(v => v.exposure === 'pinned').length;
 
     // ── RADIAL DOT LAYOUT ─────────────────────────────────────────────────────
@@ -902,7 +940,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     }
 
     // sort each ring by exposure so same-color dots cluster together
-    const expOrder = { auto: 0, 'needs-update': 1, pinned: 2 };
+    const expOrder = { auto: 0, pinned: 1 };
     for (const [depth, names] of byDepth) {
       if (depth > 0) names.sort((a, b) =>
         (expOrder[cascade.get(a)?.exposure] ?? 0) - (expOrder[cascade.get(b)?.exposure] ?? 0)
@@ -962,6 +1000,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
     // stats
     document.getElementById('stats-panel').classList.add('visible');
+    document.getElementById('legend-bar').classList.add('visible');
     document.getElementById('s-name').textContent    = id;
     document.getElementById('s-name').style.color    = '#8e44ad';
     document.getElementById('s-version').textContent = `v${n.version}`;
@@ -991,7 +1030,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
         },
         cascadeSize: cascade.size,
         maxDepth,
-        exposure: { auto: autoCount, needsUpdate: needCount, pinned: pinCount },
+        exposure: { auto: autoCount, pinned: pinCount },
         impacted: [...cascade.entries()].map(([name, v]) => ({
           name,
           depth: v.depth,
@@ -1011,7 +1050,6 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     document.getElementById('s-indirect-deps').textContent = fmt(n.indirectDependents ?? 0);
     document.getElementById('s-r0').textContent      = `${cascade.size} packages`;
     document.getElementById('s-auto').textContent    = `${autoCount}`;
-    document.getElementById('s-manual').textContent  = `${needCount}`;
     document.getElementById('s-pinned').textContent  = `${pinCount}`;
     document.getElementById('s-depth').textContent   = maxDepth > 0 ? `${maxDepth} hops` : 'none';
 
@@ -1024,18 +1062,17 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       verdict.style.cssText = `background:${AUTO_COLOR}18;color:${AUTO_COLOR};border-radius:4px;`;
     } else {
       verdict.textContent  = 'Low auto-spread risk';
-      verdict.style.cssText = `background:${NEED_COLOR}18;color:${NEED_COLOR};border-radius:4px;`;
+      verdict.style.cssText = `background:${PIN_COLOR}18;color:${PIN_COLOR};border-radius:4px;`;
     }
 
     // ── DYNAMIC EXPLAINER ────────────────────────────────────────────────────────
     // find a real example edge for each exposure type
-    const autoEx = [], needEx = [], pinEx = [];
+    const autoEx = [], pinEx = [];
     for (const edge of (graph.isDependencyOf[id] ?? [])) {
       if (!cascade.has(edge.name)) continue;
       const t = exposureType(edge.requirement);
       const entry = { name: edge.name, req: edge.requirement ?? '*' };
       if (t === 'auto' && autoEx.length < 1)         autoEx.push(entry);
-      if (t === 'needs-update' && needEx.length < 1) needEx.push(entry);
       if (t === 'pinned' && pinEx.length < 1)        pinEx.push(entry);
     }
 
@@ -1050,7 +1087,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       if (count === 0) {
         const none = document.createElement('div');
         none.className = 'exp-none';
-        none.textContent = 'None in this cascade';
+        none.textContent = 'None';
         el.appendChild(none);
         return;
       }
@@ -1063,18 +1100,13 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       if (examples[0]) {
         const exDiv = document.createElement('div');
         exDiv.style.cssText = 'margin-top:4px;font-size:10px;color:#5d6d7e;';
-        exDiv.appendChild(document.createTextNode('example: '));
+        exDiv.appendChild(document.createTextNode('e.g. '));
 
         const exSpan = document.createElement('span');
         exSpan.className = 'exp-example';
-        exSpan.style.cssText = `background:${color}12;color:${color}`;
+        exSpan.style.cssText = `color:${color}`;
         exSpan.textContent = `"${id}": "${examples[0].req}"`;
         exDiv.appendChild(exSpan);
-
-        const inSpan = document.createElement('span');
-        inSpan.style.cssText = 'font-size:9px;color:#95a5a6;';
-        inSpan.textContent = ` in ${examples[0].name}`;
-        exDiv.appendChild(inSpan);
 
         el.appendChild(exDiv);
       }
@@ -1082,25 +1114,29 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
     renderSection(
       document.getElementById('exp-auto'), AUTO_COLOR, 'Auto-pull',
-      'Their <code>package.json</code> has a semver range like <code>^x.y.z</code>. Running <code>npm i</code> will silently pull in the compromised version.',
+      'Range like ^, ~, >=; next npm i can pull compromised version.',
       autoEx, autoCount
     );
     renderSection(
-      document.getElementById('exp-needs'), NEED_COLOR, 'Needs update',
-      'In the dependency chain but behind a stricter range. Won\'t auto-pull, but a deliberate <code>npm update</code> would bring it in.',
-      needEx, needCount
-    );
-    renderSection(
       document.getElementById('exp-pinned'), PIN_COLOR, 'Pinned',
-      'Their <code>package.json</code> pins an exact version like <code>x.y.z</code>. Safe unless someone manually bumps it.',
+      'Exact pin (x.y.z); changes only on manual bump.',
       pinEx, pinCount
     );
 
   }
 
+  window.addEventListener('popstate', () => {
+    const pkg = new URLSearchParams(window.location.search).get('pkg');
+    if (pkg && nodeMap.has(pkg)) {
+      selectPackage(pkg, { updateHistory: false });
+    } else {
+      reset({ updateHistory: false });
+    }
+  });
+
   // ── QUERY PARAM SELECTION ────────────────────────────────────────────────
   const qPkg = new URLSearchParams(window.location.search).get('pkg');
-  if (qPkg && nodeMap.has(qPkg)) selectPackage(qPkg);
+  if (qPkg && nodeMap.has(qPkg)) selectPackage(qPkg, { updateHistory: false });
 });
 </script>
 </body>
