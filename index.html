@@ -149,11 +149,27 @@
       font-family: monospace; font-size: 14px; font-weight: 600; margin-bottom: 2px;
     }
     #stats-panel .pkg-version { font-size: 10px; color: #7f8c8d; margin-bottom: 12px; font-family: monospace; }
+    #stats-panel .pkg-whatif {
+      font-size: 10px;
+      color: #5d6d7e;
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+    #stats-panel .pkg-whatif code {
+      font-family: monospace;
+      font-size: 11px;
+      font-weight: 700;
+      color: #2c3e50;
+      background: #ecf0f1;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
     .stat-row {
       display: flex; justify-content: space-between; align-items: baseline;
       padding: 4px 0; border-bottom: 1px solid #ecf0f1;
     }
     .stat-row:last-child { border-bottom: none; }
+    .stat-row.no-divider { border-bottom: none; }
     .stat-label { font-size: 10px; color: #5d6d7e; }
     .stat-value { font-size: 12px; color: #2c3e50; font-variant-numeric: tabular-nums; }
     .stat-note  { font-size: 9px; color: #95a5a6; margin-top: 1px; text-align: right; }
@@ -175,41 +191,17 @@
       margin-top: 8px; padding-top: 8px; border-top: 1px solid #ecf0f1;
     }
     #dl-json-wrap a { font-size: 11px; }
-
-    /* ── EXPLAINER BOX (beside stats panel) ── */
-    #explainer-box {
-      position: absolute; top: 16px; right: 260px;
-      width: 250px;
-      background: rgba(255,255,255,0.97);
-      border: 1px solid #d5d8dc;
-      border-radius: 6px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-      padding: 12px 14px;
-      display: none; z-index: 10;
-      font-size: 11px;
+    #stats-explainer {
+      margin-top: 6px;
+      padding-top: 0;
     }
-    #explainer-box.visible { display: block; }
 
-    /* narrow screens: stack explainer below stats */
+    /* narrow screens */
     @media (max-width: 900px) {
       #stats-panel {
         max-height: 45vh;
         overflow-y: auto;
       }
-      #explainer-box {
-        right: 16px; top: auto; bottom: 16px;
-        width: 230px;
-        max-height: 40vh;
-        overflow-y: auto;
-      }
-    }
-    #explainer-box h3 {
-      font-size: 10px; font-weight: 600;
-      letter-spacing: 0.02em; color: #5d6d7e; margin-bottom: 10px;
-    }
-    #explainer-box h3 code {
-      font-family: monospace; font-size: 11px; font-weight: 700;
-      color: #2c3e50; background: #ecf0f1; padding: 1px 4px; border-radius: 3px;
     }
     .exp-section { margin-bottom: 10px; }
     .exp-section:last-child { margin-bottom: 0; }
@@ -311,6 +303,7 @@
   <div id="stats-panel">
     <div class="pkg-name" id="s-name"></div>
     <div class="pkg-version" id="s-version"></div>
+    <div class="pkg-whatif" id="s-whatif">What if <code></code> is compromised?</div>
     <div class="stat-row" title="Total packages that depend on this (direct + indirect)">
       <span class="stat-label">Total dependents</span>
       <span class="stat-value" id="s-total-deps"></span>
@@ -339,20 +332,18 @@
       <span class="stat-label">Pinned</span>
       <span class="stat-value" id="s-pinned" style="color:#27ae60"></span>
     </div>
-    <div class="stat-row">
+    <div class="stat-row no-divider">
       <span class="stat-label">Max depth</span>
       <span class="stat-value" id="s-depth"></span>
+    </div>
+    <div id="stats-explainer">
+      <div id="exp-auto" class="exp-section"></div>
+      <div id="exp-needs" class="exp-section"></div>
+      <div id="exp-pinned" class="exp-section"></div>
     </div>
     <div id="verdict"></div>
     <div id="ext-links"></div>
     <div id="dl-json-wrap"></div>
-  </div>
-
-  <div id="explainer-box">
-    <h3 id="exp-heading">What if the next version is compromised?</h3>
-    <div id="exp-auto" class="exp-section"></div>
-    <div id="exp-needs" class="exp-section"></div>
-    <div id="exp-pinned" class="exp-section"></div>
   </div>
 
 </div>
@@ -898,6 +889,9 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     document.getElementById('s-name').textContent    = id;
     document.getElementById('s-name').style.color    = '#8e44ad';
     document.getElementById('s-version').textContent = `v${n.version}`;
+    const whatIf = document.getElementById('s-whatif');
+    whatIf.innerHTML = 'What if <code></code> is compromised?';
+    whatIf.querySelector('code').textContent = id;
 
     // external links
     const encodedId = encodeURIComponent(id);
@@ -1026,12 +1020,6 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       pinEx, pinCount
     );
 
-    const expBox = document.getElementById('explainer-box');
-    expBox.classList.toggle('visible', cascade.size > 0);
-
-    const heading = document.getElementById('exp-heading');
-    heading.innerHTML = 'What if <code></code> is compromised?';
-    heading.querySelector('code').textContent = id;
   }
 
   // ── QUERY PARAM SELECTION ────────────────────────────────────────────────
