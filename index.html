@@ -233,6 +233,27 @@
       font-size: 10px; color: #bdc3c7; font-style: italic;
     }
 
+    /* ── NODE TOOLTIP ── */
+    #node-tooltip {
+      position: fixed;
+      background: rgba(44,62,80,0.92);
+      color: #fff;
+      font-size: 11px;
+      font-family: monospace;
+      padding: 5px 9px;
+      border-radius: 4px;
+      pointer-events: none;
+      white-space: nowrap;
+      display: none;
+      z-index: 50;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    #node-tooltip .tt-exp {
+      font-size: 9px;
+      opacity: 0.7;
+      margin-top: 1px;
+    }
+
     /* ── SCOPE BADGE ── */
     #scope-badge {
       position: fixed; bottom: 12px; left: 254px;
@@ -336,6 +357,7 @@
 
 </div>
 
+<div id="node-tooltip"></div>
 <div id="scope-badge" title="Scope & Limitations">⚠️ Scope & Limitations</div>
 <div id="scope-popup">
   <strong>Scope & Limitations</strong>
@@ -426,74 +448,40 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   document.getElementById('s-setsize').textContent = N;
   document.getElementById('exp-scope-count').textContent = N;
 
-  // cascades computed lazily/async — no blocking loop on startup
+  // ── Compute all cascades once, synchronously — fast (~100ms for 5k packages)
   const cascades = new Map();
-  let maxCascade = 1;
-
-  const nodes = pkgNames.map(name => ({ id: name, ...graph.packages[name] }));
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
-
-  // links from dependsOn
-  const links = [];
-  for (const [from, edges] of Object.entries(graph.dependsOn)) {
-    for (const edge of edges) links.push({ source: from, target: edge.name });
+  for (const name of pkgNames) {
+    const infected = simulate(name, graph.isDependencyOf);
+    infected.delete(name);
+    cascades.set(name, infected);
   }
+  const maxCascade = Math.max(...cascades.values().map(c => c.size), 1);
 
-  // ── SIDEBAR (initial order by totalDependents; bars fill in async) ─────────
-  const listEl = document.getElementById('threat-list');
-  const initialSorted = [...nodes].sort((a, b) =>
-    (b.totalDependents ?? 0) - (a.totalDependents ?? 0)
+  // nodeMap for metadata lookups only — nothing is rendered until a package is selected
+  const nodeMap = new Map(
+    pkgNames.map(name => [name, { id: name, ...graph.packages[name] }])
   );
-  for (const n of initialSorted) {
-    const el = document.createElement('div');
+
+  // ── SIDEBAR — sorted by cascade size, fully populated immediately ──────────
+  const listEl = document.getElementById('threat-list');
+  const sorted = [...pkgNames].sort((a, b) =>
+    cascades.get(b).size - cascades.get(a).size ||
+    (graph.packages[b].totalDependents ?? 0) - (graph.packages[a].totalDependents ?? 0)
+  );
+  for (const name of sorted) {
+    const size = cascades.get(name).size;
+    const pct  = Math.round((size / maxCascade) * 100);
+    const el   = document.createElement('div');
     el.className = 'threat-item';
-    el.dataset.id = n.id;
+    el.dataset.id = name;
     el.innerHTML = `
-      <div class="size-bar"><div class="size-bar-fill" style="width:0%"></div></div>
-      <div class="name">${n.id}</div>
-      <div class="count">…</div>
+      <div class="size-bar"><div class="size-bar-fill" style="width:${pct}%"></div></div>
+      <div class="name">${name}</div>
+      <div class="count">${size > 0 ? `+${size}` : '—'}</div>
     `;
-    el.addEventListener('click', () => selectPackage(n.id));
+    el.addEventListener('click', () => selectPackage(name));
     listEl.appendChild(el);
   }
-
-  // Compute all cascades in background — 100 per frame, yield between chunks
-  (async () => {
-    const CHUNK = 100;
-    for (let i = 0; i < pkgNames.length; i += CHUNK) {
-      for (let j = i; j < Math.min(i + CHUNK, pkgNames.length); j++) {
-        const name = pkgNames[j];
-        if (cascades.has(name)) continue;
-        const infected = simulate(name, graph.isDependencyOf);
-        infected.delete(name);
-        cascades.set(name, infected);
-        if (infected.size > maxCascade) maxCascade = infected.size;
-      }
-      // update sidebar items for this chunk
-      for (let j = i; j < Math.min(i + CHUNK, pkgNames.length); j++) {
-        const name = pkgNames[j];
-        const size = cascades.get(name).size;
-        const item = listEl.querySelector(`.threat-item[data-id="${CSS.escape(name)}"]`);
-        if (item) {
-          item.querySelector('.size-bar-fill').style.width =
-            Math.round((size / maxCascade) * 100) + '%';
-          item.querySelector('.count').textContent = size > 0 ? `+${size}` : '—';
-        }
-      }
-      await new Promise(r => setTimeout(r, 0)); // yield to browser
-    }
-    // re-sort sidebar by cascade size and re-normalize bars
-    const allItems = [...listEl.querySelectorAll('.threat-item')];
-    allItems.sort((a, b) =>
-      (cascades.get(b.dataset.id)?.size ?? 0) - (cascades.get(a.dataset.id)?.size ?? 0)
-    );
-    allItems.forEach(el => listEl.appendChild(el));
-    for (const [name, c] of cascades) {
-      const item = listEl.querySelector(`.threat-item[data-id="${CSS.escape(name)}"]`);
-      if (item) item.querySelector('.size-bar-fill').style.width =
-        Math.round((c.size / maxCascade) * 100) + '%';
-    }
-  })();
 
   // ── SEARCH ──────────────────────────────────────────────────────────────
   const searchInput = document.getElementById('pkg-search');
@@ -522,9 +510,9 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
   // ── CANVAS SETUP ──────────────────────────────────────────────────────────
   const canvas = document.getElementById('graph');
-  const ctx = canvas.getContext('2d');
+  const ctx    = canvas.getContext('2d');
   const graphAreaEl = document.getElementById('graph-area');
-  const dpr = window.devicePixelRatio || 1;
+  const dpr    = window.devicePixelRatio || 1;
   const width  = graphAreaEl.clientWidth;
   const height = graphAreaEl.clientHeight;
   canvas.width  = width  * dpr;
@@ -533,180 +521,293 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   canvas.style.height = height + 'px';
 
   const NODE_R = 6;
-  const hasDependents = new Set(
-    Object.keys(graph.isDependencyOf).filter(k => graph.isDependencyOf[k]?.length > 0)
-  );
 
-  // render state
-  let selectedId = null;
-  let selectedCascade = null;   // Map<name, {depth, exposure}>
+  // placeholder shown when nothing is selected
+  const placeholder = document.createElement('div');
+  placeholder.id = 'graph-placeholder';
+  placeholder.innerHTML = `
+    <div class="ph-icon">&#x2B21;</div>
+    <div class="ph-text">Select a package to explore its blast radius</div>
+    <div class="ph-sub">Single-click a node for connections, double-click to open its graph</div>
+  `;
+  graphAreaEl.appendChild(placeholder);
+
+  // active radial-dot state
+  let subNodes = [];   // { id, depth, isRoot, exposure, x, y, angle }
+  let subLinks = [];   // { source, target } with baked x/y
+  let depthRings = []; // ring radii for dashed guides
   let revealedUpToDepth = Infinity;
+  let selectedId = null;
+  let selectedCascade = null;
+  let focusedNodeId = null;
+  let focusedNeighborIds = new Set();
+  let lastNodeClick = { id: null, at: 0 };
+  const DOUBLE_CLICK_MS = 350;
+  let fitScaleForCurrentView = 1;
+  const DETAIL_HIDE_ZOOM_RATIO = 0.96;
+
+  let transform = d3.zoomIdentity;
+
+  // cache the background gradient — recreating it every frame is expensive
+  const bgGradient = ctx.createRadialGradient(width/2, height/2, 0, width/2, height/2, Math.max(width, height) * 0.7);
+  bgGradient.addColorStop(0, '#f5f7fa');
+  bgGradient.addColorStop(1, '#eaecf0');
+
+  const COLORS = {
+    auto:           { fill: 'rgba(192,57,43,0.27)',  stroke: '#c0392b' },
+    'needs-update': { fill: 'rgba(230,126,34,0.27)', stroke: '#e67e22' },
+    pinned:         { fill: 'rgba(39,174,96,0.27)',  stroke: '#27ae60' },
+    root:           { fill: 'rgba(142,68,173,0.13)', stroke: '#f1c40f' },
+    pending:        { fill: 'rgba(0,0,0,0.03)',       stroke: '#ddd'    },
+  };
+
+  function clearNodeFocus() {
+    focusedNodeId = null;
+    focusedNeighborIds = new Set();
+  }
+
+  function setNodeFocus(id) {
+    focusedNodeId = id;
+    const neighbors = new Set([id]);
+    for (const l of subLinks) {
+      if (l.source.id === id) neighbors.add(l.target.id);
+      if (l.target.id === id) neighbors.add(l.source.id);
+    }
+    focusedNeighborIds = neighbors;
+  }
 
   function draw() {
-    // base transform: DPR scaling so all coords are in CSS pixels
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    // radial background
-    const rg = ctx.createRadialGradient(
-      width / 2, height / 2, 0,
-      width / 2, height / 2, Math.max(width, height) * 0.7
-    );
-    rg.addColorStop(0, '#f5f7fa');
-    rg.addColorStop(1, '#eaecf0');
-    ctx.fillStyle = rg;
+    ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, width, height);
+    if (!subNodes.length) return;
+
+    const hasFocusedNeighborhood = Boolean(focusedNodeId && focusedNeighborIds.size > 0);
+    const showDetailLabels = transform.k >= (fitScaleForCurrentView * DETAIL_HIDE_ZOOM_RATIO);
 
     ctx.save();
     ctx.translate(transform.x, transform.y);
     ctx.scale(transform.k, transform.k);
     const lw = 1 / transform.k;
+    const nodeRadius = n => (n.isRoot ? NODE_R * 2 : NODE_R);
 
-    // dim links
-    ctx.beginPath();
-    ctx.strokeStyle = selectedCascade ? 'rgba(0,0,0,0.025)' : 'rgba(0,0,0,0.05)';
-    ctx.lineWidth = lw;
-    for (const l of links) {
-      if (l.source.x == null || l.target.x == null) continue;
-      ctx.moveTo(l.source.x, l.source.y);
-      ctx.lineTo(l.target.x, l.target.y);
-    }
-    ctx.stroke();
-
-    // highlighted cascade links
-    if (selectedCascade && selectedId) {
+    function strokeTrimmedLinks(strokeStyle, lineWidth, includeLink = () => true) {
       ctx.beginPath();
-      ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-      ctx.lineWidth = lw;
-      for (const l of links) {
-        if (l.source.x == null || l.target.x == null) continue;
-        const sId = l.source.id, tId = l.target.id;
-        if ((selectedCascade.has(sId) || sId === selectedId) &&
-            (selectedCascade.has(tId) || tId === selectedId)) {
-          ctx.moveTo(l.source.x, l.source.y);
-          ctx.lineTo(l.target.x, l.target.y);
-        }
+      ctx.strokeStyle = strokeStyle;
+      ctx.lineWidth = lineWidth;
+      for (const l of subLinks) {
+        if (!includeLink(l)) continue;
+        const dx = l.target.x - l.source.x;
+        const dy = l.target.y - l.source.y;
+        const dist = Math.hypot(dx, dy);
+        if (!dist) continue;
+        const ux = dx / dist;
+        const uy = dy / dist;
+        const sr = nodeRadius(l.source);
+        const tr = nodeRadius(l.target);
+        if (dist <= sr + tr) continue;
+        const x1 = l.source.x + ux * sr;
+        const y1 = l.source.y + uy * sr;
+        const x2 = l.target.x - ux * tr;
+        const y2 = l.target.y - uy * tr;
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
       }
       ctx.stroke();
     }
 
-    // nodes — labels only when zoomed in enough
-    const showLabels = transform.k > 1.5;
-    if (showLabels) {
-      ctx.font = `${10 / transform.k}px monospace`;
-      ctx.textBaseline = 'middle';
+    // dashed ring guides
+    if (showDetailLabels) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.07)';
+      ctx.lineWidth = lw;
+      ctx.setLineDash([4 / transform.k, 7 / transform.k]);
+      for (const r of depthRings) {
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.setLineDash([]);
     }
 
-    for (const n of nodes) {
-      if (n.x == null) continue;
-      const isSelected = n.id === selectedId;
-      const entry = selectedCascade?.get(n.id);
-      const revealed = entry && entry.depth <= revealedUpToDepth;
-      const dimmed = selectedCascade && !revealed && !isSelected;
-      const r = isSelected ? NODE_R * 2 : NODE_R;
+    // links
+    if (!hasFocusedNeighborhood) {
+      strokeTrimmedLinks('rgba(0,0,0,0.12)', lw);
+    } else {
+      strokeTrimmedLinks('rgba(0,0,0,0.05)', lw);
+      strokeTrimmedLinks('#000', lw, l =>
+        l.source.id === focusedNodeId || l.target.id === focusedNodeId
+      );
+    }
 
+    // batch nodes by color group — one fill+stroke per group
+    const groups = new Map();
+    for (const n of subNodes) {
+      let key = 'pending';
+      if (n.isRoot) key = 'root';
+      else if (n.depth <= revealedUpToDepth) key = n.exposure;
+      const isActive = !hasFocusedNeighborhood || focusedNeighborIds.has(n.id);
+      const groupKey = `${key}|${isActive ? 'active' : 'dim'}`;
+      if (!groups.has(groupKey)) groups.set(groupKey, []);
+      groups.get(groupKey).push(n);
+    }
+    for (const [groupKey, bucket] of groups.entries()) {
+      if (!bucket.length) continue;
+      const [key, state] = groupKey.split('|');
+      const col = COLORS[key];
+      const isRoot = key === 'root';
+      const r2 = isRoot ? NODE_R * 2 : NODE_R;
+      ctx.save();
+      if (state === 'dim') ctx.globalAlpha = 0.22;
+      ctx.lineWidth   = isRoot ? 2.5 / transform.k : lw;
+      ctx.fillStyle   = col.fill;
+      ctx.strokeStyle = col.stroke;
       ctx.beginPath();
-      ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-      if (dimmed) {
-        ctx.fillStyle = 'rgba(0,0,0,0.015)'; ctx.strokeStyle = '#ccc'; ctx.lineWidth = lw;
-      } else if (isSelected) {
-        ctx.fillStyle = '#8e44ad22'; ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 2.5 / transform.k;
-      } else if (revealed) {
-        const c = exposureColor(entry.exposure);
-        ctx.fillStyle = c + '44'; ctx.strokeStyle = c; ctx.lineWidth = lw;
-      } else if (!selectedCascade && hasDependents.has(n.id)) {
-        ctx.fillStyle = '#8e44ad22'; ctx.strokeStyle = '#8e44ad'; ctx.lineWidth = lw;
-      } else {
-        ctx.fillStyle = NODE_BASE + '33'; ctx.strokeStyle = NODE_BASE; ctx.lineWidth = lw;
-      }
+      for (const n of bucket) { ctx.moveTo(n.x + r2, n.y); ctx.arc(n.x, n.y, r2, 0, Math.PI * 2); }
       ctx.fill();
       ctx.stroke();
+      ctx.restore();
+    }
 
-      if (showLabels && !dimmed) {
-        ctx.fillStyle = '#7f8c8d';
-        ctx.fillText(n.id, n.x + r + 3 / transform.k, n.y);
+    if (hasFocusedNeighborhood) {
+      const focusNode = subNodes.find(n => n.id === focusedNodeId);
+      if (focusNode) {
+        const r = focusNode.isRoot ? NODE_R * 2 : NODE_R;
+        ctx.lineWidth = 2 / transform.k;
+        ctx.strokeStyle = '#2c3e50';
+        ctx.beginPath();
+        ctx.arc(focusNode.x, focusNode.y, r + 4 / transform.k, 0, Math.PI * 2);
+        ctx.stroke();
       }
     }
+
+    // labels — hide when zoomed out from fit to reduce clutter
+    if (showDetailLabels) {
+      const PAD = 6 / transform.k;
+      ctx.textBaseline = 'middle';
+      for (const n of subNodes) {
+        if (!n.isRoot && n.depth > revealedUpToDepth) continue;
+        const isActive = !hasFocusedNeighborhood || focusedNeighborIds.has(n.id);
+        if (!isActive) continue;
+
+        const r = n.isRoot ? NODE_R * 2 : NODE_R;
+        let lx, ly, align;
+        ctx.save();
+
+        if (n.isRoot) {
+          lx = 0; ly = -(r + PAD); align = 'center';
+          ctx.font = `bold ${13 / transform.k}px monospace`;
+        } else {
+          // offset in the outward radial direction
+          const ox = Math.cos(n.angle), oy = Math.sin(n.angle);
+          lx = n.x + ox * (r + PAD);
+          ly = n.y + oy * (r + PAD);
+          align = ox >= 0 ? 'left' : 'right';
+          ctx.font = n.id === focusedNodeId
+            ? `bold ${10 / transform.k}px monospace`
+            : `${10 / transform.k}px monospace`;
+        }
+
+        ctx.textAlign = align;
+        const label = n.id;
+        const tw = ctx.measureText(label).width;
+        const th = 11 / transform.k;
+        // white backing so label is readable over lines and other dots
+        const bx = align === 'center' ? lx - tw / 2 : align === 'right' ? lx - tw : lx;
+        ctx.fillStyle = 'rgba(255,255,255,0.82)';
+        ctx.fillRect(bx - 2 / transform.k, ly - th / 2 - 1 / transform.k,
+                     tw + 4 / transform.k, th + 2 / transform.k);
+
+        ctx.fillStyle = (n.isRoot || n.id === focusedNodeId) ? '#2c3e50' : '#5d6d7e';
+        ctx.fillText(label, lx, ly);
+        ctx.restore();
+      }
+      ctx.textAlign = 'left';
+    }
+
     ctx.restore();
   }
 
   // zoom/pan
-  let transform = d3.zoomIdentity;
-  const zoom = d3.zoom().scaleExtent([0.15, 5]).on('zoom', e => {
-    transform = e.transform;
-    draw();
+  const zoom = d3.zoom().scaleExtent([0.1, 8]).on('zoom', e => {
+    transform = e.transform; draw();
   });
-  d3.select(canvas).call(zoom);
+  d3.select(canvas).call(zoom).on('dblclick.zoom', null);
 
-  // node drag + click via pointer events
-  let _dragNode = null, _clickNode = null, _ptrDown = null;
-  canvas.addEventListener('pointerdown', e => {
-    _ptrDown = { x: e.clientX, y: e.clientY };
+  // tooltip — distance-based hit test
+  const tooltip = document.getElementById('node-tooltip');
+  const expLabel = { auto: 'auto-pull', 'needs-update': 'needs update', pinned: 'pinned' };
+  function hitTest(wx, wy) {
+    const thr = (NODE_R * 2.5) ** 2;
+    for (const n of subNodes) {
+      if (!n.isRoot && n.depth > revealedUpToDepth) continue;
+      if ((n.x - wx) ** 2 + (n.y - wy) ** 2 < thr) return n;
+    }
+    return null;
+  }
+  canvas.addEventListener('mousemove', e => {
+    if (!subNodes.length) { tooltip.style.display = 'none'; return; }
     const rect = canvas.getBoundingClientRect();
     const wx = (e.clientX - rect.left - transform.x) / transform.k;
     const wy = (e.clientY - rect.top  - transform.y) / transform.k;
-    const thr = (12 / transform.k) ** 2;
-    let best = null, bestD = Infinity;
-    for (const n of nodes) {
-      if (n.x == null) continue;
-      const d = (n.x - wx) ** 2 + (n.y - wy) ** 2;
-      if (d < thr && d < bestD) { bestD = d; best = n; }
+    const hit = hitTest(wx, wy);
+    if (hit) {
+      const exp = hit.isRoot ? 'compromised' : expLabel[hit.exposure] ?? hit.exposure;
+      tooltip.innerHTML = `<strong>${hit.id}</strong><div class="tt-exp">hop ${hit.depth} · ${exp}</div>`;
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 14) + 'px';
+      tooltip.style.top  = (e.clientY - 10) + 'px';
+      canvas.style.cursor = 'pointer';
+    } else {
+      tooltip.style.display = 'none';
+      canvas.style.cursor = '';
     }
-    _clickNode = best;
-    if (best) {
-      _dragNode = best;
-      best.fx = best.x; best.fy = best.y;
-      e.stopPropagation(); // keep zoom from panning when dragging a node
-    }
-  }, { capture: true });
-  window.addEventListener('pointermove', e => {
-    if (!_dragNode) return;
-    const rect = canvas.getBoundingClientRect();
-    _dragNode.fx = (e.clientX - rect.left - transform.x) / transform.k;
-    _dragNode.fy = (e.clientY - rect.top  - transform.y) / transform.k;
-    draw(); // redraw manually — sim may have already cooled down
   });
-  window.addEventListener('pointerup', e => {
+  canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+
+  // click
+  let _ptrDown = null;
+  canvas.addEventListener('pointerdown', e => { _ptrDown = { x: e.clientX, y: e.clientY }; });
+  canvas.addEventListener('pointerup', e => {
     if (!_ptrDown) return;
     const wasDrag = Math.hypot(e.clientX - _ptrDown.x, e.clientY - _ptrDown.y) > 4;
-    if (_dragNode) { _dragNode.fx = null; _dragNode.fy = null; draw(); }
-    if (!wasDrag) {
-      if (_clickNode) {
-        selectPackage(_clickNode.id);
-      } else {
-        reset();
-        document.getElementById('stats-panel').classList.remove('visible');
-        document.getElementById('explainer-box').classList.remove('visible');
-        document.querySelectorAll('.threat-item').forEach(el => el.classList.remove('active'));
-        const url = new URL(window.location);
-        url.searchParams.delete('pkg');
-        window.history.replaceState(null, '', url);
-      }
+    _ptrDown = null;
+    if (wasDrag) return;
+    const rect = canvas.getBoundingClientRect();
+    const wx = (e.clientX - rect.left - transform.x) / transform.k;
+    const wy = (e.clientY - rect.top  - transform.y) / transform.k;
+    const hit = hitTest(wx, wy);
+    if (!hit) {
+      clearNodeFocus();
+      lastNodeClick = { id: null, at: 0 };
+      draw();
+      return;
     }
-    _dragNode = null; _clickNode = null; _ptrDown = null;
+
+    const now = performance.now();
+    const isSecondClick =
+      lastNodeClick.id === hit.id && (now - lastNodeClick.at) <= DOUBLE_CLICK_MS;
+    lastNodeClick = { id: hit.id, at: now };
+
+    if (isSecondClick) {
+      if (hit.id !== selectedId) selectPackage(hit.id);
+      return;
+    }
+
+    setNodeFocus(hit.id);
+    draw();
   });
-
-  const sim = d3.forceSimulation(nodes)
-    .force('link',      d3.forceLink(links).id(d => d.id).distance(100).strength(0.2))
-    .force('charge',    d3.forceManyBody().strength(-180).distanceMax(250))
-    .force('x',         d3.forceX(width / 2).strength(0.04))
-    .force('y',         d3.forceY(height / 2).strength(0.04))
-    .force('collision', d3.forceCollide().radius(16))
-    .alphaDecay(0.04)
-    .velocityDecay(0.45);
-
-  sim.on('tick', draw);
 
   // ── SELECT ────────────────────────────────────────────────────────────────
   function reset() {
-    selectedId = null;
-    selectedCascade = null;
+    subNodes = []; subLinks = []; depthRings = [];
+    selectedId = null; selectedCascade = null;
+    clearNodeFocus();
+    lastNodeClick = { id: null, at: 0 };
+    fitScaleForCurrentView = 1;
     revealedUpToDepth = Infinity;
+    placeholder.style.display = '';
     draw();
   }
 
   function selectPackage(id) {
-    // update URL query param without reload
     const url = new URL(window.location);
     url.searchParams.set('pkg', id);
     window.history.replaceState(null, '', url);
@@ -717,52 +818,80 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       ?.scrollIntoView({ block: 'nearest' });
 
     const n = nodeMap.get(id);
-
-    // use precomputed cascade if available, else compute on demand
-    let cascade;
-    if (cascades.has(id)) {
-      cascade = cascades.get(id);
-    } else {
-      const infected = simulate(id, graph.isDependencyOf);
-      infected.delete(id);
-      cascades.set(id, infected);
-      cascade = infected;
-    }
-
-    const byDepth = new Map();
-    for (const [name, v] of cascade) {
-      if (!byDepth.has(v.depth)) byDepth.set(v.depth, []);
-      byDepth.get(v.depth).push(name);
-    }
+    const cascade = cascades.get(id);
+    clearNodeFocus();
+    lastNodeClick = { id: null, at: 0 };
 
     const maxDepth  = Math.max(0, ...[...cascade.values()].map(v => v.depth));
     const autoCount = [...cascade.values()].filter(v => v.exposure === 'auto').length;
     const needCount = [...cascade.values()].filter(v => v.exposure === 'needs-update').length;
     const pinCount  = [...cascade.values()].filter(v => v.exposure === 'pinned').length;
 
-    // update canvas render state
-    selectedId = id;
-    selectedCascade = cascade;
-    revealedUpToDepth = 0;
+    // ── RADIAL DOT LAYOUT ─────────────────────────────────────────────────────
+    const byDepth = new Map([[0, [id]]]);
+    for (const [name, v] of cascade) {
+      if (!byDepth.has(v.depth)) byDepth.set(v.depth, []);
+      byDepth.get(v.depth).push(name);
+    }
+
+    // sort each ring by exposure so same-color dots cluster together
+    const expOrder = { auto: 0, 'needs-update': 1, pinned: 2 };
+    for (const [depth, names] of byDepth) {
+      if (depth > 0) names.sort((a, b) =>
+        (expOrder[cascade.get(a)?.exposure] ?? 0) - (expOrder[cascade.get(b)?.exposure] ?? 0)
+      );
+    }
+
+    const MIN_GAP = 22; // min px between dot centres on a ring
+    depthRings = [];
+    let prevR = 0;
+    const posMap = new Map([[id, { x: 0, y: 0, angle: 0 }]]);
+
+    for (const depth of [...byDepth.keys()].filter(d => d > 0).sort((a, b) => a - b)) {
+      const names = byDepth.get(depth);
+      const ringR = Math.max(prevR + 80, (names.length * MIN_GAP) / (2 * Math.PI));
+      prevR = ringR;
+      depthRings.push(ringR);
+      names.forEach((name, i) => {
+        const angle = (i / names.length) * 2 * Math.PI - Math.PI / 2;
+        posMap.set(name, { x: Math.cos(angle) * ringR, y: Math.sin(angle) * ringR, angle });
+      });
+    }
+
+    subNodes = [
+      { id, depth: 0, isRoot: true, exposure: null, x: 0, y: 0, angle: 0 },
+      ...[...cascade.entries()].map(([name, v]) => {
+        const pos = posMap.get(name);
+        return { id: name, depth: v.depth, exposure: v.exposure, isRoot: false,
+                 x: pos.x, y: pos.y, angle: pos.angle };
+      })
+    ];
+    const nodeObjMap = new Map(subNodes.map(nd => [nd.id, nd]));
+    const ids = new Set([id, ...cascade.keys()]);
+    subLinks = [];
+    for (const name of ids) {
+      for (const edge of (graph.dependsOn[name] ?? [])) {
+        if (ids.has(edge.name)) {
+          const src = nodeObjMap.get(name), tgt = nodeObjMap.get(edge.name);
+          if (src && tgt) subLinks.push({ source: src, target: tgt });
+        }
+      }
+    }
+
+    const fitScale = Math.min(width, height) * 0.44 / Math.max(prevR + 40, 1);
+    fitScaleForCurrentView = fitScale;
+    d3.select(canvas).call(zoom.transform,
+      d3.zoomIdentity.translate(width / 2, height / 2).scale(fitScale));
+
+    selectedId = id; selectedCascade = cascade; revealedUpToDepth = 0;
+    placeholder.style.display = 'none';
     draw();
 
-    // pan & zoom to the selected node
-    const selNode = nodes.find(d => d.id === id);
-    if (selNode && selNode.x != null && selNode.y != null) {
-      const scale = 1.8;
-      const tx = width / 2 - selNode.x * scale;
-      const ty = height / 2 - selNode.y * scale;
-      d3.select(canvas).transition().duration(500)
-        .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
-    }
-
-    // animate cascade hop by hop — O(1) depth check per node (no includes())
-    const depths = [...byDepth.keys()].filter(d => d > 0).sort((a, b) => a - b);
-    const maxAnimDepth = depths.length > 0 ? depths[depths.length - 1] : 0;
-    for (const depth of depths) {
+    // animate ring by ring
+    for (let depth = 1; depth <= maxDepth; depth++) {
       setTimeout(() => { revealedUpToDepth = depth; draw(); }, depth * 220);
     }
-    setTimeout(() => { revealedUpToDepth = Infinity; draw(); }, (maxAnimDepth + 1) * 220);
+    setTimeout(() => { revealedUpToDepth = Infinity; draw(); }, (maxDepth + 1) * 220);
 
     // stats
     document.getElementById('stats-panel').classList.add('visible');
@@ -906,18 +1035,8 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   }
 
   // ── QUERY PARAM SELECTION ────────────────────────────────────────────────
-  const params = new URLSearchParams(window.location.search);
-  const qPkg = params.get('pkg');
-  // only select if it matches a known package name (whitelist approach)
-  if (qPkg && nodeMap.has(qPkg)) {
-    // select once positions are roughly stable (alpha < 0.3 ≈ first ~1s)
-    sim.on('tick.qpkg', () => {
-      if (sim.alpha() < 0.3) {
-        sim.on('tick.qpkg', null);
-        selectPackage(qPkg);
-      }
-    });
-  }
+  const qPkg = new URLSearchParams(window.location.search).get('pkg');
+  if (qPkg && nodeMap.has(qPkg)) selectPackage(qPkg);
 });
 </script>
 </body>
