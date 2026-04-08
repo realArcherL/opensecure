@@ -11,7 +11,8 @@ const packages: Array<{ name: string; rank: number }> = JSON.parse(
   readFileSync(filename, 'utf-8'),
 );
 
-const DELAY_MS = 300; // conservative delay between packages, deps.dev has no published rate limit
+const BATCH_SIZE  = 5;    // concurrent requests per batch
+const BATCH_DELAY = 600;  // ms between batches — ~8 req/s average, respectful to deps.dev
 
 mkdirSync('data/raw', { recursive: true });
 
@@ -23,13 +24,12 @@ function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-for (let i = 0; i < packages.length; i++) {
-  const { name } = packages[i];
+async function fetchOne(name: string, index: number): Promise<void> {
   const file = `data/raw/${toFilename(name)}.json`;
 
   if (existsSync(file)) {
-    log.info(`Skip ${i + 1}/${packages.length}: ${name}`);
-    continue;
+    log.info(`Skip ${index + 1}/${packages.length}: ${name}`);
+    return;
   }
 
   try {
@@ -64,18 +64,19 @@ for (let i = 0; i < packages.length; i++) {
     };
 
     if (dependentsData.missing)
-      log.warn(
-        `${name}@${version}: no dependent data on deps.dev, stored as 0`,
-      );
+      log.warn(`${name}@${version}: no dependent data on deps.dev, stored as 0`);
+
     writeFileSync(file, JSON.stringify(output, null, 2));
     log.info(
-      `Fetched ${i + 1}/${packages.length}: ${name}@${version} — ${dependentsData.dependentCount.toLocaleString()} dependents (${dependentsData.directDependentCount.toLocaleString()} direct)`,
+      `Fetched ${index + 1}/${packages.length}: ${name}@${version} — ${dependentsData.dependentCount.toLocaleString()} dependents`,
     );
   } catch (err) {
-    log.error(
-      `${i + 1}/${packages.length}: ${name} — ${(err as Error).message}`,
-    );
+    log.error(`${index + 1}/${packages.length}: ${name} — ${(err as Error).message}`);
   }
+}
 
-  await delay(DELAY_MS);
+for (let i = 0; i < packages.length; i += BATCH_SIZE) {
+  const batch = packages.slice(i, i + BATCH_SIZE);
+  await Promise.all(batch.map((pkg, j) => fetchOne(pkg.name, i + j)));
+  if (i + BATCH_SIZE < packages.length) await delay(BATCH_DELAY);
 }

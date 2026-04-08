@@ -20,7 +20,7 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 120            # hard cap — kill if fetch hangs
+    timeout-minutes: 180            # hard cap — kill if fetch hangs
 
     environment:
       name: github-pages

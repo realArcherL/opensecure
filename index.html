@@ -102,7 +102,13 @@
     #search-wrap input:focus { border-color: #5b7ea8; }
     #search-wrap input::placeholder { color: #aab2bd; }
 
-    #threat-list { overflow-y: auto; flex: 1; }
+    #threat-list {
+      overflow-y: auto;
+      flex: 1;
+      overscroll-behavior: contain;
+      overflow-anchor: none;
+      scrollbar-gutter: stable;
+    }
     #threat-list::-webkit-scrollbar { width: 3px; }
     #threat-list::-webkit-scrollbar-thumb { background: #bdc3c7; border-radius: 2px; }
 
@@ -588,6 +594,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   let _allItems      = [];
   let _filteredItems = [];
   let _renderedRange = { start: -1, end: -1 };
+  let _listRenderQueued = false;
 
   // Two spacer divs + one items div create the illusion of a full-length list
   const vlistTop   = document.createElement('div');
@@ -636,13 +643,22 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     vlistItems.appendChild(frag);
   }
 
+  function requestVisibleRender() {
+    if (_listRenderQueued) return;
+    _listRenderQueued = true;
+    requestAnimationFrame(() => {
+      _listRenderQueued = false;
+      renderVisible();
+    });
+  }
+
   function filterList() {
     const q = searchInput.value.trim().toLowerCase();
     searchWrap.classList.toggle('has-query', q.length > 0);
     _filteredItems   = q ? _allItems.filter(item => item.name.toLowerCase().includes(q)) : _allItems;
     _renderedRange   = { start: -1, end: -1 };
     listEl.scrollTop = 0;
-    renderVisible();
+    requestVisibleRender();
   }
 
   function scrollToItem(name) {
@@ -654,10 +670,10 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     if (itemTop < scrollTop)                     listEl.scrollTop = itemTop;
     else if (itemBot > scrollTop + clientHeight) listEl.scrollTop = itemBot - clientHeight;
     _renderedRange = { start: -1, end: -1 };
-    renderVisible();
+    requestVisibleRender();
   }
 
-  listEl.addEventListener('scroll', renderVisible, { passive: true });
+  listEl.addEventListener('scroll', requestVisibleRender, { passive: true });
   searchInput.addEventListener('input', filterList);
   document.getElementById('search-clear').addEventListener('click', () => {
     searchInput.value = ''; filterList(); searchInput.focus();
@@ -721,6 +737,91 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     root:           { fill: 'rgba(142,68,173,0.13)', stroke: '#f1c40f' },
     pending:        { fill: 'rgba(0,0,0,0.03)',       stroke: '#ddd'    },
   };
+
+  const LABEL_FONT_FAMILY = 'monospace';
+  const LABEL_FONT_PX = 10;
+  const ROOT_LABEL_FONT_PX = 13;
+  const WHEEL_ZOOM_PIXEL_STEP = 0.001;
+  const WHEEL_ZOOM_LINE_STEP = 0.065;
+  const WHEEL_ZOOM_PAGE_STEP = 0.14;
+  const WHEEL_ZOOM_DELTA_CLAMP = 0.08;
+  const labelWidthPxCache = new Map();
+  const labelMeasureCanvas = document.createElement('canvas');
+  const labelMeasureCtx = labelMeasureCanvas.getContext('2d') ?? ctx;
+  let drawQueued = false;
+  let drawFrameId = null;
+  let isGraphInteracting = false;
+
+  function fontSpec(sizePx, { bold = false, worldScale = 1 } = {}) {
+    return `${bold ? 'bold ' : ''}${sizePx / worldScale}px ${LABEL_FONT_FAMILY}`;
+  }
+
+  function getLabelWidthPx(label, sizePx, bold = false) {
+    const font = fontSpec(sizePx, { bold });
+    const key = `${font}|${label}`;
+    let width = labelWidthPxCache.get(key);
+    if (width == null) {
+      labelMeasureCtx.font = font;
+      width = labelMeasureCtx.measureText(label).width;
+      labelWidthPxCache.set(key, width);
+    }
+    return width;
+  }
+
+  function requestDraw() {
+    if (drawQueued) return;
+    drawQueued = true;
+    drawFrameId = requestAnimationFrame(() => {
+      drawQueued = false;
+      drawFrameId = null;
+      draw();
+    });
+  }
+
+  function cancelPendingDraw() {
+    if (!drawQueued || drawFrameId == null) return;
+    cancelAnimationFrame(drawFrameId);
+    drawQueued = false;
+    drawFrameId = null;
+  }
+
+  function getWorldBounds(pad = 0) {
+    return {
+      left: (-transform.x / transform.k) - pad,
+      right: ((width - transform.x) / transform.k) + pad,
+      top: (-transform.y / transform.k) - pad,
+      bottom: ((height - transform.y) / transform.k) + pad,
+    };
+  }
+
+  function boundsContainPoint(bounds, x, y, radius = 0) {
+    return !(
+      x + radius < bounds.left ||
+      x - radius > bounds.right ||
+      y + radius < bounds.top ||
+      y - radius > bounds.bottom
+    );
+  }
+
+  function segmentMayBeVisible(bounds, x1, y1, x2, y2) {
+    const minX = Math.min(x1, x2);
+    const maxX = Math.max(x1, x2);
+    const minY = Math.min(y1, y2);
+    const maxY = Math.max(y1, y2);
+    return !(
+      maxX < bounds.left ||
+      minX > bounds.right ||
+      maxY < bounds.top ||
+      minY > bounds.bottom
+    );
+  }
+
+  function zoomWheelDelta(event) {
+    const rawDelta = event.deltaMode === 0
+      ? -event.deltaY * WHEEL_ZOOM_PIXEL_STEP
+      : -Math.sign(event.deltaY || 0) * (event.deltaMode === 1 ? WHEEL_ZOOM_LINE_STEP : WHEEL_ZOOM_PAGE_STEP);
+    return Math.max(-WHEEL_ZOOM_DELTA_CLAMP, Math.min(WHEEL_ZOOM_DELTA_CLAMP, rawDelta));
+  }
 
   function hideFocusPanel() {
     const panel = document.getElementById('focus-panel');
@@ -794,13 +895,23 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     if (!subNodes.length) return;
 
     const hasFocusedNeighborhood = Boolean(focusedNodeId && focusedNeighborIds.size > 0);
-    const showDetailLabels = transform.k >= (fitScaleForCurrentView * DETAIL_HIDE_ZOOM_RATIO);
+    const showDetailLabels = !isGraphInteracting && transform.k >= (fitScaleForCurrentView * DETAIL_HIDE_ZOOM_RATIO);
+    const invScale = 1 / transform.k;
+    const labelCullPad = showDetailLabels ? 96 * invScale : 18 * invScale;
+    const visibleNodeBounds = getWorldBounds(labelCullPad);
+    const visibleLinkBounds = getWorldBounds(24 * invScale);
 
     ctx.save();
     ctx.translate(transform.x, transform.y);
     ctx.scale(transform.k, transform.k);
-    const lw = 1 / transform.k;
+    const lw = invScale;
     const nodeRadius = n => (n.isRoot ? NODE_R * 2 : NODE_R);
+    const drawableNodes = [];
+
+    for (const n of subNodes) {
+      if (!boundsContainPoint(visibleNodeBounds, n.x, n.y, nodeRadius(n))) continue;
+      drawableNodes.push(n);
+    }
 
     function strokeTrimmedLinks(strokeStyle, lineWidth, includeLink = () => true) {
       ctx.beginPath();
@@ -808,6 +919,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       ctx.lineWidth = lineWidth;
       for (const l of subLinks) {
         if (!includeLink(l)) continue;
+        if (!segmentMayBeVisible(visibleLinkBounds, l.source.x, l.source.y, l.target.x, l.target.y)) continue;
         const dx = l.target.x - l.source.x;
         const dy = l.target.y - l.source.y;
         const dist = Math.hypot(dx, dy);
@@ -831,7 +943,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     if (showDetailLabels) {
       ctx.strokeStyle = 'rgba(0,0,0,0.07)';
       ctx.lineWidth = lw;
-      ctx.setLineDash([4 / transform.k, 7 / transform.k]);
+      ctx.setLineDash([4 * invScale, 7 * invScale]);
       for (const r of depthRings) {
         ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
       }
@@ -850,7 +962,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
     // batch nodes by color group — one fill+stroke per group
     const groups = new Map();
-    for (const n of subNodes) {
+    for (const n of drawableNodes) {
       let key = 'pending';
       if (n.isRoot) key = 'root';
       else if (n.depth <= revealedUpToDepth) key = n.exposure;
@@ -879,7 +991,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
     if (hasFocusedNeighborhood) {
       const focusNode = subNodes.find(n => n.id === focusedNodeId);
-      if (focusNode) {
+      if (focusNode && boundsContainPoint(visibleNodeBounds, focusNode.x, focusNode.y, nodeRadius(focusNode) + 4 * invScale)) {
         const r = focusNode.isRoot ? NODE_R * 2 : NODE_R;
         ctx.lineWidth = 2 / transform.k;
         ctx.strokeStyle = '#2c3e50';
@@ -891,44 +1003,53 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
     // labels — hide when zoomed out from fit to reduce clutter
     if (showDetailLabels) {
-      const PAD = 6 / transform.k;
+      const PAD = 6 * invScale;
+      const labelPadX = 2 * invScale;
+      const labelPadY = invScale;
+      const baseLabelFont = fontSpec(LABEL_FONT_PX, { worldScale: transform.k });
+      const focusedLabelFont = fontSpec(LABEL_FONT_PX, { bold: true, worldScale: transform.k });
+      const rootLabelFont = fontSpec(ROOT_LABEL_FONT_PX, { bold: true, worldScale: transform.k });
+      let currentFont = '';
+      const setFont = font => {
+        if (currentFont === font) return;
+        ctx.font = font;
+        currentFont = font;
+      };
       ctx.textBaseline = 'middle';
-      for (const n of subNodes) {
+      for (const n of drawableNodes) {
         if (!n.isRoot && n.depth > revealedUpToDepth) continue;
         const isActive = !hasFocusedNeighborhood || focusedNeighborIds.has(n.id);
         if (!isActive) continue;
 
         const r = n.isRoot ? NODE_R * 2 : NODE_R;
         let lx, ly, align;
-        ctx.save();
 
         if (n.isRoot) {
           lx = 0; ly = -(r + PAD); align = 'center';
-          ctx.font = `bold ${13 / transform.k}px monospace`;
+          setFont(rootLabelFont);
         } else {
           // offset in the outward radial direction
           const ox = Math.cos(n.angle), oy = Math.sin(n.angle);
           lx = n.x + ox * (r + PAD);
           ly = n.y + oy * (r + PAD);
           align = ox >= 0 ? 'left' : 'right';
-          ctx.font = n.id === focusedNodeId
-            ? `bold ${10 / transform.k}px monospace`
-            : `${10 / transform.k}px monospace`;
+          setFont(n.id === focusedNodeId ? focusedLabelFont : baseLabelFont);
         }
 
         ctx.textAlign = align;
         const label = n.id;
-        const tw = ctx.measureText(label).width;
-        const th = 11 / transform.k;
+        const isBoldLabel = n.isRoot || n.id === focusedNodeId;
+        const labelSizePx = n.isRoot ? ROOT_LABEL_FONT_PX : LABEL_FONT_PX;
+        const tw = getLabelWidthPx(label, labelSizePx, isBoldLabel) * invScale;
+        const th = (labelSizePx + 1) * invScale;
         // white backing so label is readable over lines and other dots
         const bx = align === 'center' ? lx - tw / 2 : align === 'right' ? lx - tw : lx;
         ctx.fillStyle = 'rgba(255,255,255,0.82)';
-        ctx.fillRect(bx - 2 / transform.k, ly - th / 2 - 1 / transform.k,
-                     tw + 4 / transform.k, th + 2 / transform.k);
+        ctx.fillRect(bx - labelPadX, ly - th / 2 - labelPadY,
+                     tw + labelPadX * 2, th + labelPadY * 2);
 
         ctx.fillStyle = (n.isRoot || n.id === focusedNodeId) ? '#2c3e50' : '#5d6d7e';
         ctx.fillText(label, lx, ly);
-        ctx.restore();
       }
       ctx.textAlign = 'left';
     }
@@ -937,9 +1058,23 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   }
 
   // zoom/pan
-  const zoom = d3.zoom().scaleExtent([0.1, 8]).on('zoom', e => {
-    transform = e.transform; draw();
-  });
+  const zoom = d3.zoom()
+    .scaleExtent([0.1, 8])
+    .wheelDelta(zoomWheelDelta)
+    .on('start', e => {
+      if (!e.sourceEvent) return;
+      isGraphInteracting = true;
+      tooltip.style.display = 'none';
+    })
+    .on('zoom', e => {
+      transform = e.transform;
+      requestDraw();
+    })
+    .on('end', e => {
+      if (!e.sourceEvent) return;
+      isGraphInteracting = false;
+      requestDraw();
+    });
   d3.select(canvas).call(zoom).on('dblclick.zoom', null);
 
   // tooltip — distance-based hit test
@@ -947,14 +1082,20 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   const expLabel = { auto: 'auto-pull', pinned: 'pinned' };
   function hitTest(wx, wy) {
     const thr = (NODE_R * 2.5) ** 2;
+    const bounds = getWorldBounds(NODE_R * 3);
     for (const n of subNodes) {
       if (!n.isRoot && n.depth > revealedUpToDepth) continue;
+      if (!boundsContainPoint(bounds, n.x, n.y, NODE_R * 2)) continue;
       if ((n.x - wx) ** 2 + (n.y - wy) ** 2 < thr) return n;
     }
     return null;
   }
   canvas.addEventListener('mousemove', e => {
-    if (!subNodes.length) { tooltip.style.display = 'none'; return; }
+    if (!subNodes.length || isGraphInteracting) {
+      tooltip.style.display = 'none';
+      canvas.style.cursor = '';
+      return;
+    }
     const rect = canvas.getBoundingClientRect();
     const wx = (e.clientX - rect.left - transform.x) / transform.k;
     const wy = (e.clientY - rect.top  - transform.y) / transform.k;
@@ -988,7 +1129,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     if (!hit) {
       clearNodeFocus();
       lastNodeClick = { id: null, at: 0 };
-      draw();
+      requestDraw();
       return;
     }
 
@@ -1003,7 +1144,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     }
 
     setNodeFocus(hit.id);
-    draw();
+    requestDraw();
   });
 
   // ── WORKER MESSAGE HANDLER ──────────────────────────────────────────────────
@@ -1059,7 +1200,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     fitScaleForCurrentView = 1;
     revealedUpToDepth = Infinity;
     placeholder.style.display = '';
-    draw();
+    requestDraw();
   }
 
   function selectPackage(id, { updateHistory = true, historyMode = 'push' } = {}) {
@@ -1075,6 +1216,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     lastNodeClick = { id: null, at: 0 };
 
     // Show loading state immediately on canvas
+    cancelPendingDraw();
     subNodes = []; subLinks = []; depthRings = [];
     placeholder.style.display = 'none';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1166,13 +1308,13 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
     revealedUpToDepth = 0;
     placeholder.style.display = 'none';
-    draw();
+    requestDraw();
 
     // animate ring by ring
     for (let depth = 1; depth <= maxDepth; depth++) {
-      setTimeout(() => { revealedUpToDepth = depth; draw(); }, depth * 220);
+      setTimeout(() => { revealedUpToDepth = depth; requestDraw(); }, depth * 220);
     }
-    setTimeout(() => { revealedUpToDepth = Infinity; draw(); }, (maxDepth + 1) * 220);
+    setTimeout(() => { revealedUpToDepth = Infinity; requestDraw(); }, (maxDepth + 1) * 220);
 
     document.getElementById('legend-bar').classList.add('visible');
     document.getElementById('s-version').textContent = n ? `v${n.version}` : '';
