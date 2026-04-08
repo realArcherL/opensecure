@@ -110,7 +110,8 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 8px 16px;
+      padding: 0 16px;
+      height: 36px;
       cursor: pointer;
       border-bottom: 1px solid #ecf0f1;
       transition: background 0.1s;
@@ -132,6 +133,18 @@
     #graph-area { flex: 1; position: relative; overflow: hidden; }
     canvas#graph { width: 100%; height: 100%; display: block; cursor: grab; }
     canvas#graph:active { cursor: grabbing; }
+
+    /* ── GRAPH PLACEHOLDER ── */
+    #graph-placeholder {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      pointer-events: none; z-index: 2;
+      color: #bdc3c7;
+    }
+    .ph-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.4; }
+    .ph-text { font-size: 14px; font-weight: 500; }
+    .ph-sub  { font-size: 11px; margin-top: 6px; opacity: 0.7; }
 
     /* ── RIGHT STACK (STATS + LEGEND) ── */
     #right-stack {
@@ -493,71 +506,165 @@ function fmt(n) {
   return n.toLocaleString();
 }
 
+// ── INLINE WEB WORKER — cascade computation runs off the main thread ──────────
+// Serialise pure utility functions via .toString() so the worker gets
+// identical logic without any string-escaping issues.
+const _worker = (() => {
+  const src = `
+    'use strict';
+    const exposureType = ${exposureType.toString()};
+    const simulate     = ${simulate.toString()};
+
+    let _g = null, _names = [], _sizes = {};
+
+    self.onmessage = ({ data: msg }) => {
+      if (msg.type === 'start') {
+        fetch(msg.url).then(r => r.json()).then(graph => {
+          _g     = graph;
+          _names = Object.keys(_g.packages);
+          let maxSz = 0, done = 0;
+          for (const name of _names) {
+            const c = simulate(name, _g.isDependencyOf);
+            c.delete(name);
+            _sizes[name] = c.size;
+            if (c.size > maxSz) maxSz = c.size;
+            if (++done % 500 === 0)
+              self.postMessage({ type: 'progress', done, total: _names.length });
+          }
+          const sorted = [..._names]
+            .sort((a, b) =>
+              _sizes[b] - _sizes[a] ||
+              (_g.packages[b].totalDependents ?? 0) - (_g.packages[a].totalDependents ?? 0)
+            )
+            .map(n => ({ name: n, size: _sizes[n] }));
+          self.postMessage({ type: 'ready', sorted, maxSize: maxSz });
+        });
+        return;
+      }
+      if (msg.type === 'select') {
+        const { name } = msg;
+        const infected = simulate(name, _g.isDependencyOf);
+        infected.delete(name);
+        // serialise Map -> plain object (Maps aren't structured-cloneable as Maps)
+        const cascade = {};
+        for (const [k, v] of infected) cascade[k] = v;
+        self.postMessage({ type: 'cascade', name, cascade });
+      }
+    };
+  `;
+  return new Worker(
+    URL.createObjectURL(new Blob([src], { type: 'application/javascript' }))
+  );
+})();
+
+// Tell worker to fetch its own copy in parallel — no graph clone across threads.
+// Blob-URL workers need an absolute URL since relative paths resolve against blob:.
+_worker.postMessage({ type: 'start', url: new URL('data/graph.json', location.href).href });
+
+// Buffer worker messages that arrive before the main-thread fetch resolves.
+// (Rare in practice — BFS takes longer than a fetch — but correct either way.)
+const _msgBuf = [];
+let _msgFn = null;
+_worker.addEventListener('message', ({ data: msg }) => {
+  if (_msgFn) _msgFn(msg); else _msgBuf.push(msg);
+});
+
 fetch('data/graph.json').then(r => r.json()).then(graph => {
-  const pkgNames = Object.keys(graph.packages);
-  const N = pkgNames.length;
-
-  document.getElementById('pkg-count').textContent = `Top ${N} most popular npm packages`;
-  document.getElementById('s-setsize').textContent = N;
-  document.getElementById('exp-scope-count').textContent = N;
-
-  // ── Compute all cascades once, synchronously — fast (~100ms for 5k packages)
-  const cascades = new Map();
-  for (const name of pkgNames) {
-    const infected = simulate(name, graph.isDependencyOf);
-    infected.delete(name);
-    cascades.set(name, infected);
-  }
-  const maxCascade = Math.max(...cascades.values().map(c => c.size), 1);
+  const pkgCountEl = document.getElementById('pkg-count');
+  pkgCountEl.textContent = 'Analysing packages…';
 
   // nodeMap for metadata lookups only — nothing is rendered until a package is selected
   const nodeMap = new Map(
-    pkgNames.map(name => [name, { id: name, ...graph.packages[name] }])
+    Object.keys(graph.packages).map(name => [name, { id: name, ...graph.packages[name] }])
   );
 
-  // ── SIDEBAR — sorted by cascade size, fully populated immediately ──────────
-  const listEl = document.getElementById('threat-list');
-  const sorted = [...pkgNames].sort((a, b) =>
-    cascades.get(b).size - cascades.get(a).size ||
-    (graph.packages[b].totalDependents ?? 0) - (graph.packages[a].totalDependents ?? 0)
-  );
-  for (const name of sorted) {
-    const size = cascades.get(name).size;
-    const pct  = Math.round((size / maxCascade) * 100);
-    const el   = document.createElement('div');
-    el.className = 'threat-item';
-    el.dataset.id = name;
-    el.innerHTML = `
-      <div class="size-bar"><div class="size-bar-fill" style="width:${pct}%"></div></div>
-      <div class="name">${name}</div>
-      <div class="count">${size > 0 ? `+${size}` : '—'}</div>
-    `;
-    el.addEventListener('click', () => selectPackage(name));
-    listEl.appendChild(el);
-  }
-
-  // ── SEARCH ──────────────────────────────────────────────────────────────
+  // ── VIRTUAL SCROLL SIDEBAR ──────────────────────────────────────────────────
+  const listEl      = document.getElementById('threat-list');
   const searchInput = document.getElementById('pkg-search');
   const searchWrap  = document.getElementById('search-wrap');
+
+  const ITEM_H   = 36;   // must match CSS height of .threat-item
+  const OVERSCAN = 8;
+  let _allItems      = [];
+  let _filteredItems = [];
+  let _renderedRange = { start: -1, end: -1 };
+
+  // Two spacer divs + one items div create the illusion of a full-length list
+  const vlistTop   = document.createElement('div');
+  const vlistItems = document.createElement('div');
+  const vlistBot   = document.createElement('div');
+  listEl.appendChild(vlistTop);
+  listEl.appendChild(vlistItems);
+  listEl.appendChild(vlistBot);
+
+  function renderVisible() {
+    const scrollTop = listEl.scrollTop;
+    const viewH     = listEl.clientHeight || 600;
+    const start     = Math.max(0, Math.floor(scrollTop / ITEM_H) - OVERSCAN);
+    const end       = Math.min(_filteredItems.length,
+                               Math.ceil((scrollTop + viewH) / ITEM_H) + OVERSCAN);
+
+    vlistTop.style.height = (start * ITEM_H) + 'px';
+    vlistBot.style.height = ((_filteredItems.length - end) * ITEM_H) + 'px';
+
+    if (start === _renderedRange.start && end === _renderedRange.end) return;
+    _renderedRange = { start, end };
+
+    const frag = document.createDocumentFragment();
+    for (let i = start; i < end; i++) {
+      const item = _filteredItems[i];
+      const el   = document.createElement('div');
+      el.className    = 'threat-item' + (item.name === selectedId ? ' active' : '');
+      el.dataset.id   = item.name;
+
+      const bar  = document.createElement('div'); bar.className = 'size-bar';
+      const fill = document.createElement('div'); fill.className = 'size-bar-fill';
+      fill.style.width = item.pct + '%';
+      bar.appendChild(fill);
+
+      const nameEl  = document.createElement('div'); nameEl.className = 'name';
+      nameEl.textContent = item.name;
+
+      const countEl = document.createElement('div'); countEl.className = 'count';
+      countEl.textContent = item.size > 0 ? '+' + item.size : '—';
+
+      el.appendChild(bar); el.appendChild(nameEl); el.appendChild(countEl);
+      el.addEventListener('click', () => selectPackage(item.name));
+      frag.appendChild(el);
+    }
+    vlistItems.innerHTML = '';
+    vlistItems.appendChild(frag);
+  }
+
   function filterList() {
     const q = searchInput.value.trim().toLowerCase();
     searchWrap.classList.toggle('has-query', q.length > 0);
-    listEl.querySelectorAll('.threat-item').forEach(el => {
-      el.style.display = el.dataset.id.toLowerCase().includes(q) ? '' : 'none';
-    });
+    _filteredItems   = q ? _allItems.filter(item => item.name.toLowerCase().includes(q)) : _allItems;
+    _renderedRange   = { start: -1, end: -1 };
+    listEl.scrollTop = 0;
+    renderVisible();
   }
+
+  function scrollToItem(name) {
+    const idx     = _filteredItems.findIndex(item => item.name === name);
+    if (idx === -1) return;
+    const itemTop = idx * ITEM_H;
+    const itemBot = itemTop + ITEM_H;
+    const { scrollTop, clientHeight } = listEl;
+    if (itemTop < scrollTop)                     listEl.scrollTop = itemTop;
+    else if (itemBot > scrollTop + clientHeight) listEl.scrollTop = itemBot - clientHeight;
+    _renderedRange = { start: -1, end: -1 };
+    renderVisible();
+  }
+
+  listEl.addEventListener('scroll', renderVisible, { passive: true });
   searchInput.addEventListener('input', filterList);
   document.getElementById('search-clear').addEventListener('click', () => {
-    searchInput.value = '';
-    filterList();
-    searchInput.focus();
+    searchInput.value = ''; filterList(); searchInput.focus();
   });
-  // Ctrl/Cmd+K focuses the search
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-      e.preventDefault();
-      searchInput.focus();
-      searchInput.select();
+      e.preventDefault(); searchInput.focus(); searchInput.select();
     }
   });
 
@@ -899,12 +1006,52 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     draw();
   });
 
+  // ── WORKER MESSAGE HANDLER ──────────────────────────────────────────────────
+  let _pendingSelect = null;
+
+  // Activate the handler and flush anything buffered while main fetch was in flight
+  const _handleWorkerMsg = (msg) => {
+    if (msg.type === 'progress') {
+      const pct = Math.round(msg.done / msg.total * 100);
+      pkgCountEl.textContent = `Analysing… ${pct}%`;
+      return;
+    }
+    if (msg.type === 'ready') {
+      const { sorted, maxSize } = msg;
+      document.getElementById('s-setsize').textContent      = sorted.length;
+      document.getElementById('exp-scope-count').textContent = sorted.length;
+      pkgCountEl.textContent = `Top ${sorted.length} most popular npm packages`;
+
+      _allItems = sorted.map(s => ({
+        name: s.name,
+        size: s.size,
+        pct:  Math.round((s.size / (maxSize || 1)) * 100),
+      }));
+      _filteredItems = _allItems;
+      renderVisible();
+
+      // Now safe to handle the URL param
+      const qPkg = new URLSearchParams(window.location.search).get('pkg');
+      if (qPkg && nodeMap.has(qPkg)) selectPackage(qPkg, { updateHistory: false });
+      return;
+    }
+    if (msg.type === 'cascade') {
+      if (msg.name !== _pendingSelect) return; // stale — user already clicked elsewhere
+      _pendingSelect = null;
+      const cascade = new Map(Object.entries(msg.cascade));
+      renderCascade(msg.name, cascade);
+    }
+  };
+  _msgFn = _handleWorkerMsg;
+  _msgBuf.splice(0).forEach(_handleWorkerMsg); // flush any buffered messages
+
   // ── SELECT ────────────────────────────────────────────────────────────────
   function reset({ updateHistory = false, historyMode = 'replace' } = {}) {
     if (updateHistory) syncUrlPackage(null, historyMode);
     subNodes = []; subLinks = []; depthRings = [];
     selectedId = null; selectedCascade = null;
-    document.querySelectorAll('.threat-item').forEach(el => el.classList.remove('active'));
+    _renderedRange = { start: -1, end: -1 };
+    renderVisible(); // refreshes active class on all items
     document.getElementById('stats-panel').classList.remove('visible');
     document.getElementById('legend-bar').classList.remove('visible');
     clearNodeFocus();
@@ -918,13 +1065,42 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   function selectPackage(id, { updateHistory = true, historyMode = 'push' } = {}) {
     if (updateHistory) syncUrlPackage(id, historyMode);
 
-    document.querySelectorAll('.threat-item').forEach(el =>
-      el.classList.toggle('active', el.dataset.id === id));
-    document.querySelector(`.threat-item[data-id="${CSS.escape(id)}"]`)
-      ?.scrollIntoView({ block: 'nearest' });
+    selectedId = id;
+    _pendingSelect = id;
+    scrollToItem(id);
+    _renderedRange = { start: -1, end: -1 };
+    renderVisible(); // applies active class
+
+    clearNodeFocus();
+    lastNodeClick = { id: null, at: 0 };
+
+    // Show loading state immediately on canvas
+    subNodes = []; subLinks = []; depthRings = [];
+    placeholder.style.display = 'none';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = bgGradient;
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#95a5a6';
+    ctx.font = '13px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Loading graph…', width / 2, height / 2);
+    ctx.textAlign = 'left';
 
     const n = nodeMap.get(id);
-    const cascade = cascades.get(id);
+    document.getElementById('stats-panel').classList.add('visible');
+    document.getElementById('s-name').textContent = id;
+    document.getElementById('s-name').style.color = '#8e44ad';
+    document.getElementById('s-version').textContent = n ? `v${n.version}` : '';
+    const whatIf = document.getElementById('s-whatif');
+    whatIf.innerHTML = 'What if <code></code> is compromised?';
+    whatIf.querySelector('code').textContent = id;
+
+    _worker.postMessage({ type: 'select', name: id });
+  }
+
+  function renderCascade(id, cascade) {
+    const n = nodeMap.get(id);
+    selectedCascade = cascade;
     clearNodeFocus();
     lastNodeClick = { id: null, at: 0 };
 
@@ -988,7 +1164,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     d3.select(canvas).call(zoom.transform,
       d3.zoomIdentity.translate(width / 2, height / 2).scale(fitScale));
 
-    selectedId = id; selectedCascade = cascade; revealedUpToDepth = 0;
+    revealedUpToDepth = 0;
     placeholder.style.display = 'none';
     draw();
 
@@ -998,15 +1174,8 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     }
     setTimeout(() => { revealedUpToDepth = Infinity; draw(); }, (maxDepth + 1) * 220);
 
-    // stats
-    document.getElementById('stats-panel').classList.add('visible');
     document.getElementById('legend-bar').classList.add('visible');
-    document.getElementById('s-name').textContent    = id;
-    document.getElementById('s-name').style.color    = '#8e44ad';
-    document.getElementById('s-version').textContent = `v${n.version}`;
-    const whatIf = document.getElementById('s-whatif');
-    whatIf.innerHTML = 'What if <code></code> is compromised?';
-    whatIf.querySelector('code').textContent = id;
+    document.getElementById('s-version').textContent = n ? `v${n.version}` : '';
 
     // external links
     const encodedId = encodeURIComponent(id);
@@ -1198,9 +1367,8 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     }
   });
 
-  // ── QUERY PARAM SELECTION ────────────────────────────────────────────────
-  const qPkg = new URLSearchParams(window.location.search).get('pkg');
-  if (qPkg && nodeMap.has(qPkg)) selectPackage(qPkg, { updateHistory: false });
+  // Note: URL param selection now happens inside _worker.onmessage 'ready' handler
+  // to avoid calling selectPackage before the package list is available.
 });
 </script>
 </body>
