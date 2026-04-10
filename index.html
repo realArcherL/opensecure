@@ -1605,6 +1605,20 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     ctx.translate(transform.x, transform.y);
     ctx.scale(transform.k, transform.k);
 
+    if (depthRings.length) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(44,62,80,0.12)';
+      ctx.lineWidth = lw;
+      ctx.setLineDash([5 * invScale, 9 * invScale]);
+      for (const r of depthRings) {
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
     if (!webglRenderer) {
       const visibleLinkBounds = getWorldBounds(24 * invScale);
 
