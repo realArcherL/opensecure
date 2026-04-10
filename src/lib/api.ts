@@ -27,18 +27,29 @@ export async function getPackageInfo(
   return { version: def.versionKey.version };
 }
 
-export async function getDependencies(name: string, version: string) {
+export async function getDependencies(
+  name: string,
+  version: string,
+): Promise<{
+  dependencies: Array<{ name: string; requirement: string }>;
+  devDependencies: Array<{ name: string; requirement: string }>;
+}> {
   const encoded = encodeURIComponent(name);
   const res = await fetchWithRetry(
-    `${BASE}/v3/systems/npm/packages/${encoded}/versions/${version}:dependencies`,
+    `${BASE}/v3alpha/systems/npm/packages/${encoded}/versions/${encodeURIComponent(version)}:requirements`,
   );
-  if (res.status === 404) return { nodes: [], edges: [] };
-  if (!res.ok)
-    throw new Error(`getDependencies ${name}@${version}: ${res.status}`);
-  return res.json() as Promise<{
-    nodes: Array<{ versionKey: { name: string; version: string } }>;
-    edges: Array<{ fromNode: number; toNode: number; requirement?: string }>;
-  }>;
+  if (res.status === 404) return { dependencies: [], devDependencies: [] };
+  if (!res.ok) throw new Error(`getDependencies ${name}@${version}: ${res.status}`);
+  const data = await res.json() as {
+    npm?: { dependencies?: {
+      dependencies?: Array<{ name: string; requirement: string }>;
+      devDependencies?: Array<{ name: string; requirement: string }>;
+    }};
+  };
+  return {
+    dependencies:    data.npm?.dependencies?.dependencies    ?? [],
+    devDependencies: data.npm?.dependencies?.devDependencies ?? [],
+  };
 }
 
 export async function getDependentCount(name: string, version: string) {

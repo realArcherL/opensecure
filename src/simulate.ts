@@ -3,12 +3,14 @@ import { log } from './lib/log.js';
 
 interface Edge { name: string; requirement: string; }
 
+type ReverseGraph = Record<string, Edge[]>;
+
 interface Graph {
-  packages: Record<string, { version: string; weeklyDownloads: number; totalDependents: number }>;
-  isDependencyOf: Record<string, Edge[]>;
+  packages: Record<string, { version: string; totalDependents: number }>;
+  isDependencyOf:    ReverseGraph;
+  isDevDependencyOf: ReverseGraph;
 }
 
-// a range is "auto" if it allows new versions without manual intervention
 function isAutoRange(req: string): boolean {
   const r = req.trim();
   if (r === '*' || r === '' || r === 'latest') return true;
@@ -16,9 +18,7 @@ function isAutoRange(req: string): boolean {
   return false;
 }
 
-export function simulate(pkg: string, graph: Graph) {
-  const reverse = graph.isDependencyOf;
-  // infected: name -> { depth, auto }
+export function simulate(pkg: string, isDependencyOf: ReverseGraph) {
   const infected = new Map<string, { depth: number; auto: boolean }>();
   const queue: Array<[string, number, boolean]> = [[pkg, 0, true]];
 
@@ -26,47 +26,43 @@ export function simulate(pkg: string, graph: Graph) {
     const [current, depth, parentAuto] = queue.shift()!;
     if (infected.has(current)) continue;
     infected.set(current, { depth, auto: parentAuto });
-    for (const edge of (reverse[current] ?? [])) {
+    for (const edge of (isDependencyOf[current] ?? [])) {
       if (!infected.has(edge.name)) {
-        // auto only if this edge is auto AND the parent chain was auto
         queue.push([edge.name, depth + 1, parentAuto && isAutoRange(edge.requirement)]);
       }
     }
   }
 
   infected.delete(pkg);
-
-  const totalDownloads = [pkg, ...infected.keys()].reduce((sum, name) =>
-    sum + (graph.packages[name]?.weeklyDownloads ?? 0), 0);
-
-  const maxDepth = Math.max(0, ...[...infected.values()].map(v => v.depth));
-  const autoExposed   = [...infected.values()].filter(v => v.auto).length;
-  const manualExposed = infected.size - autoExposed;
-
-  return { infected, maxDepth, totalDownloads, autoExposed, manualExposed };
+  return infected;
 }
 
 const graph: Graph = JSON.parse(readFileSync('data/graph.json', 'utf-8'));
 const arg = process.argv[2];
+const isDevMode = process.argv.includes('--dev');
 
 if (!arg) {
-  console.error('Usage: npm run simulate <package> | --all');
+  console.error('Usage: npm run simulate <package> [--dev] | --all [--dev]');
   process.exit(1);
 }
 
+const reverseGraph = isDevMode ? graph.isDevDependencyOf : graph.isDependencyOf;
+const modeLabel = isDevMode ? 'dev' : 'prod';
+
 if (arg === '--all') {
   const results = Object.keys(graph.packages).map(pkg => {
-    const { infected, totalDownloads, autoExposed } = simulate(pkg, graph);
-    return { pkg, count: infected.size, autoExposed, totalDownloads };
+    const infected = simulate(pkg, reverseGraph);
+    const autoExposed = [...infected.values()].filter(v => v.auto).length;
+    return { pkg, count: infected.size, autoExposed };
   });
 
-  results.sort((a, b) => b.count - a.count || b.totalDownloads - a.totalDownloads);
+  results.sort((a, b) => b.count - a.count);
 
-  console.log('\nWORST CASE SCENARIOS:');
+  console.log(`\nWORST CASE SCENARIOS (${modeLabel}):`);
   for (const [i, r] of results.entries()) {
     console.log(
       `${i + 1}. ${r.pkg.padEnd(22)} → ${r.count}/${Object.keys(graph.packages).length} cascade` +
-      ` (${r.autoExposed} auto-pull, ${r.totalDownloads.toLocaleString()} dl/wk)`
+      ` (${r.autoExposed} auto-pull)`
     );
   }
 } else {
@@ -75,14 +71,16 @@ if (arg === '--all') {
     process.exit(1);
   }
 
-  const { infected, maxDepth, totalDownloads, autoExposed, manualExposed } = simulate(arg, graph);
+  const infected = simulate(arg, reverseGraph);
+  const maxDepth = Math.max(0, ...[...infected.values()].map(v => v.depth));
+  const autoExposed   = [...infected.values()].filter(v => v.auto).length;
+  const manualExposed = infected.size - autoExposed;
 
-  log.info(`Package: ${arg}`);
+  log.info(`Package: ${arg} [${modeLabel}]`);
   log.info(`Cascade: ${infected.size}/${Object.keys(graph.packages).length} packages`);
-  log.info(`Auto-pull (^/~/>=): ${autoExposed} packages — receive malicious version on next install`);
-  log.info(`Manual exposure:    ${manualExposed} packages — require deliberate update`);
+  log.info(`Auto-pull (^/~/>=): ${autoExposed} packages`);
+  log.info(`Manual exposure:    ${manualExposed} packages`);
   log.info(`Max depth: ${maxDepth} hops`);
-  log.info(`Weekly downloads at risk: ${totalDownloads.toLocaleString()}`);
 
   if (infected.size > 0) {
     console.log('\nCascade:');

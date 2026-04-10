@@ -70,7 +70,7 @@ jobs:
           mkdir -p _site/data _site/lib
           cp index.html _site/
           cp data/graph.json _site/data/
-          cp node_modules/d3/dist/d3.min.js _site/lib/d3.v7.min.js
+          cp -R lib/. _site/lib/
 
       # ── 7. Upload & deploy ─────────────────────────────────────────────────
       - name: Upload Pages artifact

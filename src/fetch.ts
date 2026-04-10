@@ -40,17 +40,6 @@ async function fetchOne(name: string, index: number): Promise<void> {
       getDependentCount(name, version),
     ]);
 
-    const nodes = depsData.nodes.map(n => ({
-      name: n.versionKey.name,
-      version: n.versionKey.version,
-    }));
-
-    const edges = depsData.edges.map(e => ({
-      from: depsData.nodes[e.fromNode].versionKey.name,
-      to: depsData.nodes[e.toNode].versionKey.name,
-      requirement: e.requirement ?? '*',
-    }));
-
     const output = {
       name,
       version,
@@ -60,7 +49,8 @@ async function fetchOne(name: string, index: number): Promise<void> {
         indirect: dependentsData.indirectDependentCount,
         total: dependentsData.dependentCount,
       },
-      dependencies: { nodes, edges },
+      dependencies:    depsData.dependencies,
+      devDependencies: depsData.devDependencies,
     };
 
     if (dependentsData.missing)

@@ -5,10 +5,8 @@ interface RawPackage {
   name: string;
   version: string;
   dependents: { direct?: number; indirect?: number; total?: number };
-  dependencies: {
-    nodes: Array<{ name: string; version: string }>;
-    edges: Array<{ from: string; to: string; requirement: string }>;
-  };
+  dependencies:    Array<{ name: string; requirement: string }>;
+  devDependencies: Array<{ name: string; requirement: string }>;
 }
 
 const files = readdirSync('data/raw').filter(f => f.endsWith('.json'));
@@ -27,16 +25,10 @@ const packages: Record<
     indirectDependents: number;
   }
 > = {};
-// edge: from depends on `to` via `requirement` semver range
-const dependsOn: Record<
-  string,
-  Array<{ name: string; requirement: string }>
-> = {};
-// reverse: `pkg` is pulled in by these packages, with the range they use
-const isDependencyOf: Record<
-  string,
-  Array<{ name: string; requirement: string }>
-> = {};
+const dependsOn:         Record<string, Array<{ name: string; requirement: string }>> = {};
+const isDependencyOf:    Record<string, Array<{ name: string; requirement: string }>> = {};
+const devDependsOn:      Record<string, Array<{ name: string; requirement: string }>> = {};
+const isDevDependencyOf: Record<string, Array<{ name: string; requirement: string }>> = {};
 
 for (const pkg of raws) {
   packages[pkg.name] = {
@@ -46,22 +38,27 @@ for (const pkg of raws) {
     indirectDependents: pkg.dependents?.indirect ?? 0,
   };
 
-  // keep only intra-set edges, deduplicate by `to` name
-  const seen = new Set<string>();
-  const edges: Array<{ name: string; requirement: string }> = [];
-  for (const e of pkg.dependencies.edges) {
-    if (e.from === pkg.name && topSet.has(e.to) && !seen.has(e.to)) {
-      seen.add(e.to);
-      edges.push({ name: e.to, requirement: e.requirement ?? '*' });
-    }
-  }
-  dependsOn[pkg.name] = edges;
+  const buildEdges = (list: Array<{ name: string; requirement: string }>) => {
+    const seen = new Set<string>();
+    return list
+      .filter(e => topSet.has(e.name) && !seen.has(e.name) && seen.add(e.name))
+      .map(e => ({ name: e.name, requirement: e.requirement ?? '*' }));
+  };
 
-  for (const { name: dep, requirement } of edges) {
+  const prodEdges = buildEdges(pkg.dependencies ?? []);
+  dependsOn[pkg.name] = prodEdges;
+  for (const { name: dep, requirement } of prodEdges) {
     if (!isDependencyOf[dep]) isDependencyOf[dep] = [];
-    if (!isDependencyOf[dep].find(e => e.name === pkg.name)) {
+    if (!isDependencyOf[dep].find(e => e.name === pkg.name))
       isDependencyOf[dep].push({ name: pkg.name, requirement });
-    }
+  }
+
+  const devEdges = buildEdges(pkg.devDependencies ?? []);
+  devDependsOn[pkg.name] = devEdges;
+  for (const { name: dep, requirement } of devEdges) {
+    if (!isDevDependencyOf[dep]) isDevDependencyOf[dep] = [];
+    if (!isDevDependencyOf[dep].find(e => e.name === pkg.name))
+      isDevDependencyOf[dep].push({ name: pkg.name, requirement });
   }
 }
 
@@ -71,6 +68,8 @@ const graph = {
   packages,
   dependsOn,
   isDependencyOf,
+  devDependsOn,
+  isDevDependencyOf,
 };
 
 writeFileSync('data/graph.json', JSON.stringify(graph, null, 2));

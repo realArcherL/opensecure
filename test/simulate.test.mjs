@@ -211,3 +211,50 @@ describe('simulate — graph integrity', () => {
     }
   });
 });
+
+describe('simulate — dev graph integrity', () => {
+  it('graph has isDevDependencyOf and devDependsOn keys', () => {
+    assert.ok('isDevDependencyOf' in graph, 'graph missing isDevDependencyOf');
+    assert.ok('devDependsOn' in graph, 'graph missing devDependsOn');
+  });
+
+  it('every isDevDependencyOf target exists in packages', () => {
+    for (const [pkg, edges] of Object.entries(graph.isDevDependencyOf)) {
+      assert.ok(graph.packages[pkg], `${pkg} in isDevDependencyOf but missing from packages`);
+      for (const edge of edges) {
+        assert.ok(graph.packages[edge.name], `${edge.name} (dev-dependent of ${pkg}) missing from packages`);
+      }
+    }
+  });
+
+  it('devDependsOn and isDevDependencyOf are consistent mirrors', () => {
+    for (const [pkg, edges] of Object.entries(graph.devDependsOn)) {
+      for (const edge of edges) {
+        const reverseEdges = graph.isDevDependencyOf[edge.name] ?? [];
+        const found = reverseEdges.some(e => e.name === pkg);
+        assert.ok(found, `${pkg} devDependsOn ${edge.name}, but ${edge.name} isDevDependencyOf does not list ${pkg}`);
+      }
+    }
+  });
+
+  it('every dev edge has a requirement string', () => {
+    for (const [pkg, edges] of Object.entries(graph.isDevDependencyOf)) {
+      for (const edge of edges) {
+        assert.ok(typeof edge.requirement === 'string', `${pkg} → ${edge.name} dev edge missing requirement`);
+      }
+    }
+  });
+
+  it('dev cascade is disjoint concern from prod cascade', () => {
+    // A package can appear in both, but the graphs must be independently valid
+    const prodCascade = simulate('jest', graph.isDependencyOf);
+    const devCascade  = simulate('jest', graph.isDevDependencyOf);
+    prodCascade.delete('jest');
+    devCascade.delete('jest');
+    // dev cascade should be larger for a test tool like jest
+    assert.ok(
+      devCascade.size >= prodCascade.size,
+      `jest dev cascade (${devCascade.size}) should be >= prod cascade (${prodCascade.size})`,
+    );
+  });
+});

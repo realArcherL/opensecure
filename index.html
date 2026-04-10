@@ -3,14 +3,52 @@
 <head>
   <meta charset="UTF-8" />
   <title>npm packages blast radius</title>
-  <script defer src="https://cloud.umami.is/script.js" data-website-id="d9d65e95-1419-4518-87e8-ba536fcb78eb"></script>
   <script src="lib/d3.v7.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --page-bg: #eef0f4;
+      --panel-bg: #ffffff;
+      --panel-bg-strong: rgba(255, 255, 255, 0.97);
+      --panel-bg-soft: rgba(238, 243, 248, 0.96);
+      --panel-bg-softer: rgba(238, 243, 248, 0.92);
+      --input-bg: #f8f9fa;
+      --hover-bg: #f0f3f7;
+      --active-bg: #dce6f1;
+      --chip-bg: #ecf0f1;
+      --graph-bg-center: #f5f7fa;
+      --graph-bg-edge: #eaecf0;
+      --text-strong: #2c3e50;
+      --text-main: #34495e;
+      --text-muted: #5d6d7e;
+      --text-soft: #8c969f;
+      --border: #d5d8dc;
+      --border-strong: #aeb8c2;
+      --shadow: rgba(0, 0, 0, 0.08);
+      --shadow-strong: rgba(0, 0, 0, 0.2);
+      --runtime: #5b7ea8;
+      --runtime-soft: #8ca2bd;
+      --tooling: #2f8f83;
+      --tooling-soft: #7caea7;
+      --auto: #cf7468;
+      --pinned: #5f9478;
+      --root-stroke: #e0b64e;
+      --root-fill: rgba(120, 102, 168, 0.14);
+      --pending-stroke: #ccd3d9;
+      --pending-fill: rgba(44, 62, 80, 0.05);
+      --tooltip-bg: rgba(44, 62, 80, 0.92);
+      --tooltip-text: #ffffff;
+      --scope-badge-bg: rgba(243, 156, 18, 0.7);
+      --scope-badge-bg-hover: #e67e22;
+      --link-ink: #95a5a6;
+      --edge-ink: rgba(0, 0, 0, 0.14);
+      --edge-ink-dim: rgba(0, 0, 0, 0.06);
+      --label-bg: rgba(255, 255, 255, 0.82);
+    }
 
     body {
-      background: #eef0f4;
-      color: #2c3e50;
+      background: var(--page-bg);
+      color: var(--text-strong);
       font-family: system-ui, -apple-system, sans-serif;
       overflow: hidden;
       display: flex;
@@ -21,16 +59,16 @@
     #threat-panel {
       width: 240px;
       flex-shrink: 0;
-      background: #ffffff;
-      border-right: 1px solid #d5d8dc;
+      background: var(--panel-bg);
+      border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
       z-index: 10;
     }
     #panel-title {
       padding: 14px 16px 10px;
-      border-bottom: 1px solid #d5d8dc;
-      background: #ffffff;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-bg);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -38,33 +76,47 @@
     #panel-title h1 {
       font-size: 13px;
       font-weight: 700;
-      color: #2c3e50;
+      color: var(--text-strong);
       letter-spacing: -0.01em;
     }
     #panel-title .title-links {
       display: flex; gap: 8px; font-size: 10px;
     }
     #panel-title .title-links a {
-      color: #5d6d7e; text-decoration: none; font-weight: 600;
+      color: var(--text-muted); text-decoration: none; font-weight: 600;
       transition: color 0.15s;
     }
-    #panel-title .title-links a:hover { color: #2c3e50; }
+    #panel-title .title-links a:hover { color: var(--text-strong); }
     #threat-panel header {
       padding: 14px 16px;
-      border-bottom: 1px solid #d5d8dc;
+      border-bottom: 1px solid var(--border);
     }
     #threat-panel header h1 {
       font-size: 10px;
       font-weight: 600;
       letter-spacing: 0.14em;
       text-transform: uppercase;
-      color: #5d6d7e;
+      color: var(--text-muted);
     }
-    #threat-panel header p { font-size: 11px; color: #7f8c8d; margin-top: 3px; }
+    #threat-panel header p { font-size: 11px; color: var(--text-soft); margin-top: 3px; }
+    #rank-mode-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .mode-row-label {
+      flex-shrink: 0;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+    }
 
     #search-wrap {
       padding: 8px 12px;
-      border-bottom: 1px solid #d5d8dc;
+      border-bottom: 1px solid var(--border);
       position: relative;
     }
     #search-clear {
@@ -75,7 +127,7 @@
       width: 16px; height: 16px;
       border: none; background: none;
       cursor: pointer;
-      color: #95a5a6;
+      color: var(--text-soft);
       font-size: 14px;
       line-height: 1;
       padding: 0;
@@ -85,22 +137,22 @@
       border-radius: 50%;
       transition: color 0.15s, background 0.15s;
     }
-    #search-clear:hover { color: #2c3e50; background: #ecf0f1; }
+    #search-clear:hover { color: var(--text-strong); background: var(--chip-bg); }
     #search-wrap.has-query #search-clear { display: flex; }
     #search-wrap input {
       width: 100%;
       padding: 6px 8px 6px 28px;
       font-size: 11px;
-      font-family: system-ui, -apple-system, sans-serif;
-      border: 1px solid #d5d8dc;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      border: 1px solid var(--border);
       border-radius: 4px;
       outline: none;
-      background: #f8f9fa url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='%237f8c8d' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85zm-5.242.156a5 5 0 1 1 0-10 5 5 0 0 1 0 10z'/%3E%3C/svg%3E") no-repeat 8px center;
-      color: #2c3e50;
+      background: var(--input-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='%2371685e' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85zm-5.242.156a5 5 0 1 1 0-10 5 5 0 0 1 0 10z'/%3E%3C/svg%3E") no-repeat 8px center;
+      color: var(--text-strong);
       transition: border-color 0.15s;
     }
-    #search-wrap input:focus { border-color: #5b7ea8; }
-    #search-wrap input::placeholder { color: #aab2bd; }
+    #search-wrap input:focus { border-color: var(--runtime); }
+    #search-wrap input::placeholder { color: var(--text-soft); }
 
     #threat-list {
       overflow-y: auto;
@@ -110,34 +162,79 @@
       scrollbar-gutter: stable;
     }
     #threat-list::-webkit-scrollbar { width: 3px; }
-    #threat-list::-webkit-scrollbar-thumb { background: #bdc3c7; border-radius: 2px; }
+    #threat-list::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
 
     .threat-item {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 0 16px;
-      height: 36px;
+      gap: 10px;
+      padding: 7px 16px;
+      height: 48px;
       cursor: pointer;
-      border-bottom: 1px solid #ecf0f1;
+      border-bottom: 1px solid var(--border);
       transition: background 0.1s;
     }
-    .threat-item:hover  { background: #f0f3f7; }
-    .threat-item.active { background: #dce6f1; }
+    .threat-item:hover  { background: var(--hover-bg); }
+    .threat-item.active { background: var(--active-bg); }
+    .threat-item-main {
+      min-width: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
     .threat-item .name {
-      font-size: 11px; color: #2c3e50; flex: 1;
+      font-size: 11px; color: var(--text-strong); flex: 1;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       font-family: monospace;
     }
-    .threat-item .count { font-size: 10px; color: #7f8c8d; flex-shrink: 0; }
-    .size-bar {
-      width: 28px; height: 3px; background: #d5dbdb; flex-shrink: 0; border-radius: 2px; overflow: hidden;
+    .threat-item-counts {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      min-width: 0;
     }
-    .size-bar-fill { height: 100%; background: #5b7ea8; border-radius: 2px; }
+    .threat-mode-count {
+      font-size: 9px;
+      font-weight: 500;
+      color: var(--text-soft);
+      white-space: nowrap;
+    }
+    .threat-mode-count.runtime { color: var(--runtime-soft); }
+    .threat-mode-count.tooling { color: var(--tooling-soft); }
+    .threat-mode-count.active.runtime { color: var(--runtime); font-weight: 700; }
+    .threat-mode-count.active.tooling { color: var(--tooling); font-weight: 700; }
+    .size-bar {
+      width: 34px; height: 4px; background: var(--chip-bg); flex-shrink: 0; border-radius: 2px; overflow: hidden;
+    }
+    .size-bar-fill { height: 100%; border-radius: 2px; }
+    .size-bar-fill.runtime { background: var(--runtime); }
+    .size-bar-fill.tooling { background: var(--tooling); }
 
     /* ── GRAPH ── */
-    #graph-area { flex: 1; position: relative; overflow: hidden; }
-    canvas#graph { width: 100%; height: 100%; display: block; cursor: grab; }
+    #graph-area {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: radial-gradient(circle at center, var(--graph-bg-center) 0%, var(--graph-bg-edge) 74%);
+    }
+    canvas#graph-webgl,
+    canvas#graph {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    canvas#graph-webgl {
+      z-index: 1;
+      pointer-events: none;
+    }
+    canvas#graph {
+      z-index: 2;
+      cursor: grab;
+      background: transparent;
+    }
     canvas#graph:active { cursor: grabbing; }
 
     /* ── GRAPH PLACEHOLDER ── */
@@ -145,8 +242,8 @@
       position: absolute; inset: 0;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      pointer-events: none; z-index: 2;
-      color: #bdc3c7;
+      pointer-events: none; z-index: 3;
+      color: var(--text-soft);
     }
     .ph-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.4; }
     .ph-text { font-size: 14px; font-weight: 500; }
@@ -165,10 +262,10 @@
     }
     #stats-panel {
       width: 100%;
-      background: rgba(255,255,255,0.97);
-      border: 1px solid #d5d8dc;
+      background: var(--panel-bg-strong);
+      border: 1px solid var(--border);
       border-radius: 6px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      box-shadow: 0 2px 12px var(--shadow);
       padding: 14px;
       display: none;
     }
@@ -176,10 +273,10 @@
     #stats-panel .pkg-name {
       font-family: monospace; font-size: 14px; font-weight: 600; margin-bottom: 2px;
     }
-    #stats-panel .pkg-version { font-size: 10px; color: #7f8c8d; margin-bottom: 12px; font-family: monospace; }
+    #stats-panel .pkg-version { font-size: 10px; color: var(--text-soft); margin-bottom: 12px; font-family: monospace; }
     #stats-panel .pkg-whatif {
       font-size: 10px;
-      color: #5d6d7e;
+      color: var(--text-muted);
       margin-bottom: 10px;
       line-height: 1.4;
     }
@@ -187,10 +284,42 @@
       font-family: monospace;
       font-size: 11px;
       font-weight: 700;
-      color: #2c3e50;
-      background: #ecf0f1;
+      color: var(--text-strong);
+      background: var(--chip-bg);
       padding: 1px 4px;
       border-radius: 3px;
+    }
+    .mode-toggle {
+      display: flex;
+      gap: 6px;
+      flex: 1;
+    }
+    #blast-mode-toggle {
+      margin-bottom: 10px;
+    }
+    .mode-toggle-btn {
+      flex: 1;
+      min-width: 0;
+      padding: 5px 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--panel-bg);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1.2;
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .mode-toggle-btn:hover {
+      border-color: var(--border-strong);
+      color: var(--text-main);
+    }
+    .mode-toggle-btn.active {
+      background: var(--text-strong);
+      border-color: var(--text-strong);
+      color: var(--panel-bg);
+      box-shadow: 0 1px 4px var(--shadow);
     }
     #focus-panel {
       position: absolute;
@@ -198,11 +327,11 @@
       left: 16px;
       max-width: 320px;
       padding: 8px 10px;
-      background: rgba(238,243,248,0.96);
-      border: 1px solid #d9e3ee;
+      background: var(--panel-bg-soft);
+      border: 1px solid var(--border);
       border-radius: 6px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-      color: #34495e;
+      box-shadow: 0 2px 10px var(--shadow);
+      color: var(--text-main);
       z-index: 9;
       display: none;
       pointer-events: none;
@@ -222,19 +351,19 @@
     #focus-panel.minimized {
       max-width: 140px;
       padding: 5px 8px;
-      background: rgba(238,243,248,0.92);
+      background: var(--panel-bg-softer);
     }
     #focus-panel.minimized .focus-full { display: none; }
     #focus-panel.minimized .focus-mini { display: block; }
     .stat-row {
       display: flex; justify-content: space-between; align-items: baseline;
-      padding: 4px 0; border-bottom: 1px solid #ecf0f1;
+      padding: 4px 0; border-bottom: 1px solid var(--border);
     }
     .stat-row:last-child { border-bottom: none; }
     .stat-row.no-divider { border-bottom: none; }
-    .stat-label { font-size: 10px; color: #5d6d7e; }
-    .stat-value { font-size: 12px; color: #2c3e50; font-variant-numeric: tabular-nums; }
-    .stat-note  { font-size: 9px; color: #95a5a6; margin-top: 1px; text-align: right; }
+    .stat-label { font-size: 10px; color: var(--text-muted); }
+    .stat-value { font-size: 12px; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+    .stat-note  { font-size: 9px; color: var(--text-soft); margin-top: 1px; text-align: right; }
     #verdict {
       margin-top: 10px; padding: 6px 10px;
       font-size: 10px; font-weight: 600;
@@ -245,20 +374,20 @@
     }
     #ext-links a, #dl-json-wrap a {
       display: block; padding: 2px 0;
-      font-size: 10px; color: #95a5a6; text-decoration: none;
+      font-size: 10px; color: var(--text-soft); text-decoration: none;
       cursor: pointer; transition: color 0.15s;
     }
-    #ext-links a:hover, #dl-json-wrap a:hover { color: #5d6d7e; text-decoration: underline; }
+    #ext-links a:hover, #dl-json-wrap a:hover { color: var(--text-muted); text-decoration: underline; }
     #dl-json-wrap {
-      margin-top: 8px; padding-top: 8px; border-top: 1px solid #ecf0f1;
+      margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);
     }
     #dl-json-wrap a { font-size: 11px; }
     #legend-bar {
       width: 100%;
-      background: rgba(255,255,255,0.97);
-      border: 1px solid #d5d8dc;
+      background: var(--panel-bg-strong);
+      border: 1px solid var(--border);
       border-radius: 6px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      box-shadow: 0 2px 12px var(--shadow);
       padding: 10px 12px;
       display: none;
       overflow-x: hidden;
@@ -298,7 +427,7 @@
       display: inline-block;
     }
     .exp-desc {
-      font-size: 10px; color: #7f8c8d; line-height: 1.5; margin-bottom: 4px;
+      font-size: 10px; color: var(--text-soft); line-height: 1.5; margin-bottom: 4px;
       overflow-wrap: anywhere;
       word-break: break-word;
     }
@@ -310,14 +439,14 @@
       word-break: break-word;
     }
     .exp-none {
-      font-size: 10px; color: #bdc3c7; font-style: italic;
+      font-size: 10px; color: var(--text-soft); font-style: italic;
     }
 
     /* ── NODE TOOLTIP ── */
     #node-tooltip {
       position: fixed;
-      background: rgba(44,62,80,0.92);
-      color: #fff;
+      background: var(--tooltip-bg);
+      color: var(--tooltip-text);
       font-size: 11px;
       font-family: monospace;
       padding: 5px 9px;
@@ -326,7 +455,7 @@
       white-space: nowrap;
       display: none;
       z-index: 50;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      box-shadow: 0 2px 8px var(--shadow-strong);
     }
     #node-tooltip .tt-exp {
       font-size: 9px;
@@ -337,28 +466,28 @@
     /* ── SCOPE BADGE ── */
     #scope-badge {
       position: fixed; bottom: 12px; left: 254px;
-      background: rgba(243, 156, 18, 0.7); color: #fff;
+      background: var(--scope-badge-bg); color: var(--panel-bg);
       font-size: 10px; font-weight: 600;
       padding: 5px 10px; border-radius: 4px;
       cursor: pointer; z-index: 20;
       display: flex; align-items: center; gap: 5px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      box-shadow: 0 2px 8px var(--shadow);
       transition: background 0.15s;
     }
-    #scope-badge:hover { background: #e67e22; }
+    #scope-badge:hover { background: var(--scope-badge-bg-hover); }
     #scope-popup {
       position: fixed; bottom: 42px; left: 254px;
       width: 280px;
       background: rgba(255,255,255,0.98);
-      border: 1px solid #d5d8dc;
+      border: 1px solid var(--border);
       border-radius: 6px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      box-shadow: 0 4px 16px var(--shadow);
       padding: 14px;
       display: none; z-index: 20;
-      font-size: 10px; color: #5d6d7e; line-height: 1.7;
+      font-size: 10px; color: var(--text-muted); line-height: 1.7;
     }
     #scope-popup.visible { display: block; }
-    #scope-popup strong { color: #2c3e50; font-size: 11px; display: block; margin-bottom: 6px; }
+    #scope-popup strong { color: var(--text-strong); font-size: 11px; display: block; margin-bottom: 6px; }
     #scope-popup ul { margin: 0; padding-left: 14px; }
     #scope-popup li { margin-bottom: 4px; }
 
@@ -377,6 +506,13 @@
   <header>
     <h1>Top Packages</h1>
     <p id="pkg-count">Loading…</p>
+    <div id="rank-mode-row">
+      <span class="mode-row-label">Rank by</span>
+      <div id="list-mode-toggle" class="mode-toggle" aria-label="Package ranking mode">
+        <button class="mode-toggle-btn active" data-mode="runtime">Runtime</button>
+        <button class="mode-toggle-btn" data-mode="tooling">Tooling</button>
+      </div>
+    </div>
   </header>
   <div id="search-wrap">
     <input id="pkg-search" type="text" placeholder="Search packages…" autocomplete="off" spellcheck="false" />
@@ -386,6 +522,7 @@
 </div>
 
 <div id="graph-area">
+  <canvas id="graph-webgl" aria-hidden="true"></canvas>
   <canvas id="graph"></canvas>
   <div id="focus-panel" aria-live="polite">
     <div id="focus-panel-full" class="focus-full"></div>
@@ -397,6 +534,10 @@
       <div class="pkg-name" id="s-name"></div>
       <div class="pkg-version" id="s-version"></div>
       <div class="pkg-whatif" id="s-whatif">What if <code></code> is compromised?</div>
+      <div id="blast-mode-toggle" class="mode-toggle">
+        <button class="mode-toggle-btn active" data-mode="runtime">Runtime</button>
+        <button class="mode-toggle-btn" data-mode="tooling">Tooling</button>
+      </div>
       <div class="stat-row" title="Total packages that depend on this (direct + indirect)">
         <span class="stat-label">Total dependents</span>
         <span class="stat-value" id="s-total-deps"></span>
@@ -415,11 +556,11 @@
       </div>
       <div class="stat-row" title="^ ~ >= ranges — pulled in on next npm install">
         <span class="stat-label">Auto-pull</span>
-        <span class="stat-value" id="s-auto" style="color:#c0392b"></span>
+        <span class="stat-value" id="s-auto" style="color:var(--auto)"></span>
       </div>
       <div class="stat-row" title="Exact version pins — safe unless someone deliberately updates">
         <span class="stat-label">Pinned</span>
-        <span class="stat-value" id="s-pinned" style="color:#27ae60"></span>
+        <span class="stat-value" id="s-pinned" style="color:var(--pinned)"></span>
       </div>
       <div class="stat-row no-divider">
         <span class="stat-label">Max depth</span>
@@ -448,12 +589,8 @@
     <li>Scoped to the top-<span id="exp-scope-count"></span> popular npm packages. Real blast radius extends beyond this graph.</li>
     <li>Uses latest version dependency trees. Pinned older versions may have different dependencies.</li>
     <li>Models a fresh <code>npm install</code> (no lockfile). Existing lockfiles prevent auto-pull until updated.</li>
-    <li>Excludes devDependencies — packages used only during development/testing are not modeled as propagation vectors.</li>
+    <li>Supports both blast modes: Runtime follows production dependency chains, while Tooling follows devDependencies used during development and testing.</li>
   </ul>
-</div>
-
-<div id="footer" style="position:fixed;bottom:6px;right:12px;font-size:9px;color:#bdc3c7;z-index:5;">
-  Analytics by <a href="https://umami.is" target="_blank" rel="noopener" style="color:#95a5a6;text-decoration:none;">Umami</a>
 </div>
 
 <script>
@@ -469,8 +606,8 @@ document.addEventListener('click', (e) => {
   }
 });
 
-const AUTO_COLOR = '#c0392b';
-const PIN_COLOR  = '#27ae60';
+const AUTO_COLOR = '#cf7468';
+const PIN_COLOR  = '#5f9478';
 
 // two exposure types: auto, pinned
 function exposureType(req) {
@@ -521,40 +658,63 @@ const _worker = (() => {
     const exposureType = ${exposureType.toString()};
     const simulate     = ${simulate.toString()};
 
-    let _g = null, _names = [], _sizes = {};
+    let _g = null, _names = [], _runtimeSizes = {}, _toolingSizes = {};
 
     self.onmessage = ({ data: msg }) => {
       if (msg.type === 'start') {
         fetch(msg.url).then(r => r.json()).then(graph => {
           _g     = graph;
           _names = Object.keys(_g.packages);
-          let maxSz = 0, done = 0;
+          let maxRuntimeSz = 0, maxToolingSz = 0, done = 0;
           for (const name of _names) {
-            const c = simulate(name, _g.isDependencyOf);
-            c.delete(name);
-            _sizes[name] = c.size;
-            if (c.size > maxSz) maxSz = c.size;
-            if (++done % 500 === 0)
+            const runtimeCascade = simulate(name, _g.isDependencyOf);
+            runtimeCascade.delete(name);
+            _runtimeSizes[name] = runtimeCascade.size;
+            if (_runtimeSizes[name] > maxRuntimeSz) maxRuntimeSz = _runtimeSizes[name];
+
+            const toolingCascade = simulate(name, _g.isDevDependencyOf);
+            toolingCascade.delete(name);
+            _toolingSizes[name] = toolingCascade.size;
+            if (_toolingSizes[name] > maxToolingSz) maxToolingSz = _toolingSizes[name];
+
+            if (++done % 250 === 0 || done === _names.length)
               self.postMessage({ type: 'progress', done, total: _names.length });
           }
-          const sorted = [..._names]
+          const sortBySize = (sizes) => [..._names]
             .sort((a, b) =>
-              _sizes[b] - _sizes[a] ||
-              (_g.packages[b].totalDependents ?? 0) - (_g.packages[a].totalDependents ?? 0)
+              sizes[b] - sizes[a] ||
+              (_g.packages[b].totalDependents ?? 0) - (_g.packages[a].totalDependents ?? 0) ||
+              a.localeCompare(b)
             )
-            .map(n => ({ name: n, size: _sizes[n] }));
-          self.postMessage({ type: 'ready', sorted, maxSize: maxSz });
+            .map(n => ({ name: n, size: sizes[n] }));
+          self.postMessage({
+            type: 'ready',
+            runtimeSorted: sortBySize(_runtimeSizes),
+            toolingSorted: sortBySize(_toolingSizes),
+            maxRuntimeSize: maxRuntimeSz,
+            maxToolingSize: maxToolingSz,
+          });
         });
         return;
       }
       if (msg.type === 'select') {
-        const { name } = msg;
-        const infected = simulate(name, _g.isDependencyOf);
+        const { name, mode = 'runtime' } = msg;
+        const reverseGraph = mode === 'tooling' ? _g.isDevDependencyOf : _g.isDependencyOf;
+        const forwardGraph = mode === 'tooling' ? _g.devDependsOn      : _g.dependsOn;
+        const infected = simulate(name, reverseGraph);
         infected.delete(name);
         // serialise Map -> plain object (Maps aren't structured-cloneable as Maps)
         const cascade = {};
         for (const [k, v] of infected) cascade[k] = v;
-        self.postMessage({ type: 'cascade', name, cascade });
+        // build edge list off the main thread — avoids O(n×e) work on render
+        const reachable = new Set([name, ...Object.keys(cascade)]);
+        const links = [];
+        for (const nodeName of reachable) {
+          for (const edge of (forwardGraph[nodeName] ?? [])) {
+            if (reachable.has(edge.name)) links.push([nodeName, edge.name]);
+          }
+        }
+        self.postMessage({ type: 'cascade', name, cascade, mode, links });
       }
     };
   `;
@@ -589,12 +749,15 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   const searchInput = document.getElementById('pkg-search');
   const searchWrap  = document.getElementById('search-wrap');
 
-  const ITEM_H   = 36;   // must match CSS height of .threat-item
+  const ITEM_H   = 48;   // must match CSS height of .threat-item
   const OVERSCAN = 8;
   let _allItems      = [];
   let _filteredItems = [];
   let _renderedRange = { start: -1, end: -1 };
   let _listRenderQueued = false;
+  let _listReady = false;
+  let _itemsByName = new Map();
+  let _sortedNamesByMode = { runtime: [], tooling: [] };
 
   // Two spacer divs + one items div create the illusion of a full-length list
   const vlistTop   = document.createElement('div');
@@ -625,17 +788,35 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       el.dataset.id   = item.name;
 
       const bar  = document.createElement('div'); bar.className = 'size-bar';
-      const fill = document.createElement('div'); fill.className = 'size-bar-fill';
-      fill.style.width = item.pct + '%';
+      const fill = document.createElement('div');
+      fill.className = `size-bar-fill ${listMode}`;
+      fill.style.width = `${listMode === 'tooling' ? item.toolingPct : item.runtimePct}%`;
       bar.appendChild(fill);
 
+      const mainEl = document.createElement('div');
+      mainEl.className = 'threat-item-main';
       const nameEl  = document.createElement('div'); nameEl.className = 'name';
       nameEl.textContent = item.name;
+      nameEl.title = item.name;
+      mainEl.appendChild(nameEl);
 
-      const countEl = document.createElement('div'); countEl.className = 'count';
-      countEl.textContent = item.size > 0 ? '+' + item.size : '—';
+      const countsEl = document.createElement('div');
+      countsEl.className = 'threat-item-counts';
 
-      el.appendChild(bar); el.appendChild(nameEl); el.appendChild(countEl);
+      const runtimeEl = document.createElement('span');
+      runtimeEl.className = `threat-mode-count runtime${listMode === 'runtime' ? ' active' : ''}`;
+      runtimeEl.textContent = `Runtime ${fmt(item.runtimeSize)}`;
+
+      const toolingEl = document.createElement('span');
+      toolingEl.className = `threat-mode-count tooling${listMode === 'tooling' ? ' active' : ''}`;
+      toolingEl.textContent = `Tooling ${fmt(item.toolingSize)}`;
+
+      countsEl.appendChild(runtimeEl);
+      countsEl.appendChild(toolingEl);
+      mainEl.appendChild(countsEl);
+
+      el.appendChild(bar);
+      el.appendChild(mainEl);
       el.addEventListener('click', () => selectPackage(item.name));
       frag.appendChild(el);
     }
@@ -652,13 +833,115 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     });
   }
 
-  function filterList() {
+  function modeLabel(mode) {
+    return mode === 'tooling' ? 'Tooling' : 'Runtime';
+  }
+
+  function normalizeSearchToken(value) {
+    return value
+      .toLowerCase()
+      .replace(/^@/, '')
+      .replace(/[./_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function buildSearchMeta(name) {
+    const lowerName = name.toLowerCase();
+    const bareName = lowerName.replace(/^@/, '');
+    const scopedMatch = lowerName.match(/^@([^/]+)\/(.+)$/);
+    const scope = scopedMatch?.[1] ?? '';
+    const leaf = scopedMatch?.[2] ?? lowerName;
+    return {
+      lowerName,
+      bareName,
+      normalizedName: normalizeSearchToken(lowerName),
+      scope,
+      leaf,
+      normalizedLeaf: normalizeSearchToken(leaf),
+    };
+  }
+
+  function getSearchScore(item, query) {
+    const trimmedQuery = query.trim().toLowerCase();
+    if (!trimmedQuery) return 0;
+
+    const bareQuery = trimmedQuery.replace(/^@/, '');
+    const normalizedQuery = normalizeSearchToken(trimmedQuery);
+    const { lowerName, bareName, normalizedName, scope, leaf, normalizedLeaf } = item.search;
+
+    if (lowerName === trimmedQuery || bareName === bareQuery) return 120;
+    if (scope && (scope === bareQuery || `@${scope}` === trimmedQuery)) return 112;
+    if (leaf === bareQuery || normalizedLeaf === normalizedQuery) return 104;
+    if (lowerName.startsWith(trimmedQuery) || bareName.startsWith(bareQuery)) return 94;
+    if (scope && scope.startsWith(bareQuery)) return 90;
+    if (leaf.startsWith(bareQuery) || normalizedLeaf.startsWith(normalizedQuery)) return 84;
+    if (normalizedName.includes(normalizedQuery)) return 74;
+    if (lowerName.includes(trimmedQuery) || bareName.includes(bareQuery)) return 68;
+    return -1;
+  }
+
+  function rebuildVisibleItems({ resetScroll = false, keepSelectionInView = false } = {}) {
     const q = searchInput.value.trim().toLowerCase();
     searchWrap.classList.toggle('has-query', q.length > 0);
-    _filteredItems   = q ? _allItems.filter(item => item.name.toLowerCase().includes(q)) : _allItems;
-    _renderedRange   = { start: -1, end: -1 };
-    listEl.scrollTop = 0;
+    const orderedNames = _sortedNamesByMode[listMode] ?? [];
+    _allItems = orderedNames.map(name => _itemsByName.get(name)).filter(Boolean);
+    _filteredItems = q
+      ? _allItems
+        .map((item, index) => ({ item, index, score: getSearchScore(item, q) }))
+        .filter(entry => entry.score >= 0)
+        .sort((a, b) => b.score - a.score || a.index - b.index)
+        .map(entry => entry.item)
+      : _allItems;
+    _renderedRange = { start: -1, end: -1 };
+    if (resetScroll) listEl.scrollTop = 0;
+    updatePackageCountText();
     requestVisibleRender();
+    if (keepSelectionInView && selectedId) scrollToItem(selectedId);
+  }
+
+  function updatePackageCountText() {
+    if (!_listReady) return;
+    const q = searchInput.value.trim();
+    if (q) {
+      const label = _filteredItems.length === 1 ? 'match' : 'matches';
+      pkgCountEl.textContent = `${_filteredItems.length} ${label} for "${q}" in ${modeLabel(listMode)} ranking`;
+      return;
+    }
+    pkgCountEl.textContent = `Top ${_sortedNamesByMode.runtime.length} npm packages ranked by ${modeLabel(listMode)} blast radius`;
+  }
+
+  function updateListModeControls() {
+    document.querySelectorAll('#list-mode-toggle .mode-toggle-btn').forEach(btn =>
+      btn.classList.toggle('active', btn.dataset.mode === listMode)
+    );
+  }
+
+  function updateBlastModeControls() {
+    document.querySelectorAll('#blast-mode-toggle .mode-toggle-btn').forEach(btn =>
+      btn.classList.toggle('active', btn.dataset.mode === blastMode)
+    );
+  }
+
+  function setListMode(nextMode) {
+    if (!nextMode || nextMode === listMode) return;
+    listMode = nextMode;
+    updateListModeControls();
+    if (_listReady) {
+      rebuildVisibleItems({ resetScroll: !selectedId, keepSelectionInView: !!selectedId });
+    }
+  }
+
+  function setBlastMode(nextMode, { rerenderSelection = true, updateHistory = true, historyMode = 'push' } = {}) {
+    if (!nextMode || nextMode === blastMode) return;
+    blastMode = nextMode;
+    if (updateHistory) syncUrlState({ historyMode });
+    updateBlastModeControls();
+    if (selectedId && rerenderSelection) selectPackage(selectedId, { updateHistory: false });
+  }
+
+  function filterList() {
+    rebuildVisibleItems({ resetScroll: true });
   }
 
   function scrollToItem(name) {
@@ -678,6 +961,16 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   document.getElementById('search-clear').addEventListener('click', () => {
     searchInput.value = ''; filterList(); searchInput.focus();
   });
+  document.getElementById('list-mode-toggle').addEventListener('click', e => {
+    const btn = e.target.closest('.mode-toggle-btn');
+    if (!btn) return;
+    setListMode(btn.dataset.mode);
+  });
+  document.getElementById('blast-mode-toggle').addEventListener('click', e => {
+    const btn = e.target.closest('.mode-toggle-btn');
+    if (!btn) return;
+    setBlastMode(btn.dataset.mode);
+  });
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
       e.preventDefault(); searchInput.focus(); searchInput.select();
@@ -685,12 +978,19 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   });
 
   // ── CANVAS SETUP ──────────────────────────────────────────────────────────
+  const webglCanvas = document.getElementById('graph-webgl');
   const canvas = document.getElementById('graph');
   const ctx    = canvas.getContext('2d');
+  const gl     = webglCanvas.getContext('webgl', { alpha: true, antialias: true, premultipliedAlpha: true })
+               ?? webglCanvas.getContext('experimental-webgl', { alpha: true, antialias: true, premultipliedAlpha: true });
   const graphAreaEl = document.getElementById('graph-area');
   const dpr    = window.devicePixelRatio || 1;
   const width  = graphAreaEl.clientWidth;
   const height = graphAreaEl.clientHeight;
+  webglCanvas.width  = width  * dpr;
+  webglCanvas.height = height * dpr;
+  webglCanvas.style.width  = width  + 'px';
+  webglCanvas.style.height = height + 'px';
   canvas.width  = width  * dpr;
   canvas.height = height * dpr;
   canvas.style.width  = width  + 'px';
@@ -711,10 +1011,12 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   // active radial-dot state
   let subNodes = [];   // { id, depth, isRoot, exposure, x, y, angle }
   let subLinks = [];   // { source, target } with baked x/y
-  let depthRings = []; // ring radii for dashed guides
+  let depthRings = []; // ring radii used by the radial layout
   let revealedUpToDepth = Infinity;
   let selectedId = null;
   let selectedCascade = null;
+  let listMode = 'runtime';
+  let blastMode = 'runtime';
   let focusedNodeId = null;
   let focusedNeighborIds = new Set();
   let lastNodeClick = { id: null, at: 0 };
@@ -723,20 +1025,218 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   let fitScaleForCurrentView = 1;
   const DETAIL_HIDE_ZOOM_RATIO = 0.96;
   let focusPanelTimer = null;
+  let nodeQuadtree = null;
 
   let transform = d3.zoomIdentity;
 
-  // cache the background gradient — recreating it every frame is expensive
-  const bgGradient = ctx.createRadialGradient(width/2, height/2, 0, width/2, height/2, Math.max(width, height) * 0.7);
-  bgGradient.addColorStop(0, '#f5f7fa');
-  bgGradient.addColorStop(1, '#eaecf0');
-
   const COLORS = {
-    auto:           { fill: 'rgba(192,57,43,0.27)',  stroke: '#c0392b' },
-    pinned:         { fill: 'rgba(39,174,96,0.27)',  stroke: '#27ae60' },
-    root:           { fill: 'rgba(142,68,173,0.13)', stroke: '#f1c40f' },
-    pending:        { fill: 'rgba(0,0,0,0.03)',       stroke: '#ddd'    },
+    auto:           { fill: 'rgba(192,96,84,0.5)',   stroke: '#c06054' },
+    pinned:         { fill: 'rgba(84,132,107,0.34)', stroke: '#54846b' },
+    root:           { fill: 'rgba(116,101,156,0.18)', stroke: '#d3ab3d' },
+    pending:        { fill: 'rgba(44,62,80,0.08)',    stroke: '#b7c0cb' },
   };
+  const WEBGL_NODE_STRIDE_FLOATS = 12;
+  const DIMMED_NODE_ALPHA = 0.72;
+  const webglColorCache = new Map();
+  const WEBGL_COLORS = Object.fromEntries(
+    Object.entries(COLORS).map(([key, value]) => [key, {
+      fill: parseCssColor01(value.fill),
+      stroke: parseCssColor01(value.stroke),
+    }])
+  );
+
+  function parseCssColor01(css) {
+    const cached = webglColorCache.get(css);
+    if (cached) return cached;
+
+    let rgba = [0, 0, 0, 1];
+    if (css.startsWith('#')) {
+      const hex = css.slice(1);
+      if (hex.length === 3) {
+        rgba = [
+          parseInt(hex[0] + hex[0], 16) / 255,
+          parseInt(hex[1] + hex[1], 16) / 255,
+          parseInt(hex[2] + hex[2], 16) / 255,
+          1,
+        ];
+      } else if (hex.length === 6) {
+        rgba = [
+          parseInt(hex.slice(0, 2), 16) / 255,
+          parseInt(hex.slice(2, 4), 16) / 255,
+          parseInt(hex.slice(4, 6), 16) / 255,
+          1,
+        ];
+      }
+    } else {
+      const match = css.match(/^rgba?\((.+)\)$/i);
+      if (match) {
+        const [r = '0', g = '0', b = '0', a = '1'] = match[1].split(',').map(part => part.trim());
+        rgba = [Number(r) / 255, Number(g) / 255, Number(b) / 255, Number(a)];
+      }
+    }
+
+    webglColorCache.set(css, rgba);
+    return rgba;
+  }
+
+  function colorWithAlpha(color, alphaMultiplier = 1) {
+    return [color[0], color[1], color[2], color[3] * alphaMultiplier];
+  }
+
+  function createShader(glContext, type, source) {
+    const shader = glContext.createShader(type);
+    glContext.shaderSource(shader, source);
+    glContext.compileShader(shader);
+    if (glContext.getShaderParameter(shader, glContext.COMPILE_STATUS)) return shader;
+    const error = glContext.getShaderInfoLog(shader);
+    glContext.deleteShader(shader);
+    throw new Error(error || 'Shader compilation failed');
+  }
+
+  function createProgram(glContext, vertexSource, fragmentSource) {
+    const vertexShader = createShader(glContext, glContext.VERTEX_SHADER, vertexSource);
+    const fragmentShader = createShader(glContext, glContext.FRAGMENT_SHADER, fragmentSource);
+    const program = glContext.createProgram();
+    glContext.attachShader(program, vertexShader);
+    glContext.attachShader(program, fragmentShader);
+    glContext.linkProgram(program);
+    glContext.deleteShader(vertexShader);
+    glContext.deleteShader(fragmentShader);
+    if (glContext.getProgramParameter(program, glContext.LINK_STATUS)) return program;
+    const error = glContext.getProgramInfoLog(program);
+    glContext.deleteProgram(program);
+    throw new Error(error || 'Program link failed');
+  }
+
+  function initWebglRenderer(glContext) {
+    if (!glContext) return null;
+
+    try {
+      const edgeProgram = createProgram(glContext, `
+        attribute vec2 a_position;
+        uniform vec2 u_resolution;
+        uniform vec2 u_translate;
+        uniform float u_zoom;
+        void main() {
+          vec2 cssPos = a_position * u_zoom + u_translate;
+          vec2 clip = (cssPos / u_resolution) * 2.0 - 1.0;
+          gl_Position = vec4(clip * vec2(1.0, -1.0), 0.0, 1.0);
+        }
+      `, `
+        precision mediump float;
+        uniform vec4 u_color;
+        void main() {
+          gl_FragColor = u_color;
+        }
+      `);
+
+      const nodeProgram = createProgram(glContext, `
+        attribute vec2 a_position;
+        attribute float a_radius;
+        attribute float a_strokeWidth;
+        attribute vec4 a_fillColor;
+        attribute vec4 a_strokeColor;
+        uniform vec2 u_resolution;
+        uniform vec2 u_translate;
+        uniform float u_zoom;
+        uniform float u_dpr;
+        varying float v_radiusPx;
+        varying float v_strokePx;
+        varying vec4 v_fillColor;
+        varying vec4 v_strokeColor;
+        varying float v_pointSize;
+        void main() {
+          vec2 cssPos = a_position * u_zoom + u_translate;
+          vec2 clip = (cssPos / u_resolution) * 2.0 - 1.0;
+          gl_Position = vec4(clip * vec2(1.0, -1.0), 0.0, 1.0);
+          v_radiusPx = a_radius * u_zoom * u_dpr;
+          v_strokePx = a_strokeWidth * u_dpr;
+          v_fillColor = a_fillColor;
+          v_strokeColor = a_strokeColor;
+          v_pointSize = max(1.0, (a_radius * 2.0 * u_zoom + a_strokeWidth * 2.0 + 2.0) * u_dpr);
+          gl_PointSize = v_pointSize;
+        }
+      `, `
+        precision mediump float;
+        varying float v_radiusPx;
+        varying float v_strokePx;
+        varying vec4 v_fillColor;
+        varying vec4 v_strokeColor;
+        varying float v_pointSize;
+        void main() {
+          vec2 centered = (gl_PointCoord - 0.5) * v_pointSize;
+          float distPx = length(centered);
+          float aa = 1.0;
+          float outer = 1.0 - smoothstep(v_radiusPx - aa, v_radiusPx + aa, distPx);
+          if (outer <= 0.0) discard;
+
+          float innerRadius = max(v_radiusPx - v_strokePx, 0.0);
+          float inner = 1.0 - smoothstep(innerRadius - aa, innerRadius + aa, distPx);
+          float strokeMask = max(outer - inner, 0.0);
+          vec4 color = v_fillColor * inner + v_strokeColor * strokeMask;
+          if (color.a <= 0.0) discard;
+          gl_FragColor = vec4(color.rgb, color.a);
+        }
+      `);
+
+      glContext.disable(glContext.DEPTH_TEST);
+      glContext.enable(glContext.BLEND);
+      glContext.blendFunc(glContext.SRC_ALPHA, glContext.ONE_MINUS_SRC_ALPHA);
+      glContext.clearColor(0, 0, 0, 0);
+
+      return {
+        gl: glContext,
+        edgeProgram: {
+          program: edgeProgram,
+          attribs: {
+            position: glContext.getAttribLocation(edgeProgram, 'a_position'),
+          },
+          uniforms: {
+            resolution: glContext.getUniformLocation(edgeProgram, 'u_resolution'),
+            translate: glContext.getUniformLocation(edgeProgram, 'u_translate'),
+            zoom: glContext.getUniformLocation(edgeProgram, 'u_zoom'),
+            color: glContext.getUniformLocation(edgeProgram, 'u_color'),
+          },
+        },
+        nodeProgram: {
+          program: nodeProgram,
+          attribs: {
+            position: glContext.getAttribLocation(nodeProgram, 'a_position'),
+            radius: glContext.getAttribLocation(nodeProgram, 'a_radius'),
+            strokeWidth: glContext.getAttribLocation(nodeProgram, 'a_strokeWidth'),
+            fillColor: glContext.getAttribLocation(nodeProgram, 'a_fillColor'),
+            strokeColor: glContext.getAttribLocation(nodeProgram, 'a_strokeColor'),
+          },
+          uniforms: {
+            resolution: glContext.getUniformLocation(nodeProgram, 'u_resolution'),
+            translate: glContext.getUniformLocation(nodeProgram, 'u_translate'),
+            zoom: glContext.getUniformLocation(nodeProgram, 'u_zoom'),
+            dpr: glContext.getUniformLocation(nodeProgram, 'u_dpr'),
+          },
+        },
+        buffers: {
+          nodes: glContext.createBuffer(),
+          dimEdges: glContext.createBuffer(),
+          focusEdges: glContext.createBuffer(),
+        },
+        counts: {
+          nodes: 0,
+          dimEdges: 0,
+          focusEdges: 0,
+        },
+        dirty: {
+          nodes: true,
+          edges: true,
+        },
+      };
+    } catch (error) {
+      console.error('WebGL graph renderer init failed:', error);
+      return null;
+    }
+  }
+
+  const webglRenderer = initWebglRenderer(gl);
+  if (!webglRenderer) webglCanvas.style.display = 'none';
 
   const LABEL_FONT_FAMILY = 'monospace';
   const LABEL_FONT_PX = 10;
@@ -785,6 +1285,10 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     drawFrameId = null;
   }
 
+  function getNodeRadius(node) {
+    return node.isRoot ? NODE_R * 2 : NODE_R;
+  }
+
   function getWorldBounds(pad = 0) {
     return {
       left: (-transform.x / transform.k) - pad,
@@ -816,11 +1320,195 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     );
   }
 
+  function markWebglDirty({ nodes = true, edges = true } = {}) {
+    if (!webglRenderer) return;
+    if (nodes) webglRenderer.dirty.nodes = true;
+    if (edges) webglRenderer.dirty.edges = true;
+  }
+
+  function clearWebglScene() {
+    if (!webglRenderer) return;
+    webglRenderer.counts.nodes = 0;
+    webglRenderer.counts.dimEdges = 0;
+    webglRenderer.counts.focusEdges = 0;
+    webglRenderer.dirty.nodes = false;
+    webglRenderer.dirty.edges = false;
+
+    const glContext = webglRenderer.gl;
+    glContext.viewport(0, 0, webglCanvas.width, webglCanvas.height);
+    glContext.clear(glContext.COLOR_BUFFER_BIT);
+  }
+
+  function appendTrimmedSegment(out, link) {
+    const dx = link.target.x - link.source.x;
+    const dy = link.target.y - link.source.y;
+    const dist = Math.hypot(dx, dy);
+    if (!dist) return;
+
+    const sourceRadius = getNodeRadius(link.source);
+    const targetRadius = getNodeRadius(link.target);
+    if (dist <= sourceRadius + targetRadius) return;
+
+    const ux = dx / dist;
+    const uy = dy / dist;
+    out.push(
+      link.source.x + ux * sourceRadius,
+      link.source.y + uy * sourceRadius,
+      link.target.x - ux * targetRadius,
+      link.target.y - uy * targetRadius
+    );
+  }
+
+  function rebuildWebglNodes() {
+    if (!webglRenderer) return;
+
+    const glContext = webglRenderer.gl;
+    const nodeData = new Float32Array(subNodes.length * WEBGL_NODE_STRIDE_FLOATS);
+    const hasFocusedNeighborhood = Boolean(focusedNodeId && focusedNeighborIds.size > 0);
+    let offset = 0;
+
+    for (const node of subNodes) {
+      const colorKey = node.isRoot
+        ? 'root'
+        : (node.depth <= revealedUpToDepth ? node.exposure : 'pending');
+      const palette = WEBGL_COLORS[colorKey] ?? WEBGL_COLORS.pending;
+      const alphaMultiplier = !hasFocusedNeighborhood || focusedNeighborIds.has(node.id) ? 1 : DIMMED_NODE_ALPHA;
+      const fill = colorWithAlpha(palette.fill, alphaMultiplier);
+      const stroke = colorWithAlpha(palette.stroke, alphaMultiplier);
+
+      nodeData[offset++] = node.x;
+      nodeData[offset++] = node.y;
+      nodeData[offset++] = getNodeRadius(node);
+      nodeData[offset++] = node.isRoot ? 2.5 : 1;
+      nodeData[offset++] = fill[0];
+      nodeData[offset++] = fill[1];
+      nodeData[offset++] = fill[2];
+      nodeData[offset++] = fill[3];
+      nodeData[offset++] = stroke[0];
+      nodeData[offset++] = stroke[1];
+      nodeData[offset++] = stroke[2];
+      nodeData[offset++] = stroke[3];
+    }
+
+    glContext.bindBuffer(glContext.ARRAY_BUFFER, webglRenderer.buffers.nodes);
+    glContext.bufferData(glContext.ARRAY_BUFFER, nodeData, glContext.DYNAMIC_DRAW);
+    webglRenderer.counts.nodes = subNodes.length;
+    webglRenderer.dirty.nodes = false;
+  }
+
+  function rebuildWebglEdges() {
+    if (!webglRenderer) return;
+
+    const glContext = webglRenderer.gl;
+    const dimEdges = [];
+    const focusEdges = [];
+    const hasFocusedNeighborhood = Boolean(focusedNodeId && focusedNeighborIds.size > 0);
+
+    for (const link of subLinks) {
+      appendTrimmedSegment(dimEdges, link);
+      if (hasFocusedNeighborhood && (link.source.id === focusedNodeId || link.target.id === focusedNodeId)) {
+        appendTrimmedSegment(focusEdges, link);
+      }
+    }
+
+    glContext.bindBuffer(glContext.ARRAY_BUFFER, webglRenderer.buffers.dimEdges);
+    glContext.bufferData(glContext.ARRAY_BUFFER, new Float32Array(dimEdges), glContext.DYNAMIC_DRAW);
+    glContext.bindBuffer(glContext.ARRAY_BUFFER, webglRenderer.buffers.focusEdges);
+    glContext.bufferData(glContext.ARRAY_BUFFER, new Float32Array(focusEdges), glContext.DYNAMIC_DRAW);
+
+    webglRenderer.counts.dimEdges = dimEdges.length / 2;
+    webglRenderer.counts.focusEdges = focusEdges.length / 2;
+    webglRenderer.dirty.edges = false;
+  }
+
+  function syncWebglScene() {
+    if (!webglRenderer) return;
+    if (webglRenderer.dirty.edges) rebuildWebglEdges();
+    if (webglRenderer.dirty.nodes) rebuildWebglNodes();
+  }
+
+  function drawWebglEdges(buffer, vertexCount, color) {
+    if (!webglRenderer || !vertexCount) return;
+
+    const { gl: glContext, edgeProgram } = webglRenderer;
+    glContext.useProgram(edgeProgram.program);
+    glContext.bindBuffer(glContext.ARRAY_BUFFER, buffer);
+    glContext.enableVertexAttribArray(edgeProgram.attribs.position);
+    glContext.vertexAttribPointer(edgeProgram.attribs.position, 2, glContext.FLOAT, false, 0, 0);
+    glContext.uniform2f(edgeProgram.uniforms.resolution, width, height);
+    glContext.uniform2f(edgeProgram.uniforms.translate, transform.x, transform.y);
+    glContext.uniform1f(edgeProgram.uniforms.zoom, transform.k);
+    glContext.uniform4fv(edgeProgram.uniforms.color, color);
+    glContext.drawArrays(glContext.LINES, 0, vertexCount);
+  }
+
+  function drawWebglNodes() {
+    if (!webglRenderer || !webglRenderer.counts.nodes) return;
+
+    const { gl: glContext, nodeProgram } = webglRenderer;
+    const stride = WEBGL_NODE_STRIDE_FLOATS * 4;
+
+    glContext.useProgram(nodeProgram.program);
+    glContext.bindBuffer(glContext.ARRAY_BUFFER, webglRenderer.buffers.nodes);
+
+    glContext.enableVertexAttribArray(nodeProgram.attribs.position);
+    glContext.vertexAttribPointer(nodeProgram.attribs.position, 2, glContext.FLOAT, false, stride, 0);
+
+    glContext.enableVertexAttribArray(nodeProgram.attribs.radius);
+    glContext.vertexAttribPointer(nodeProgram.attribs.radius, 1, glContext.FLOAT, false, stride, 2 * 4);
+
+    glContext.enableVertexAttribArray(nodeProgram.attribs.strokeWidth);
+    glContext.vertexAttribPointer(nodeProgram.attribs.strokeWidth, 1, glContext.FLOAT, false, stride, 3 * 4);
+
+    glContext.enableVertexAttribArray(nodeProgram.attribs.fillColor);
+    glContext.vertexAttribPointer(nodeProgram.attribs.fillColor, 4, glContext.FLOAT, false, stride, 4 * 4);
+
+    glContext.enableVertexAttribArray(nodeProgram.attribs.strokeColor);
+    glContext.vertexAttribPointer(nodeProgram.attribs.strokeColor, 4, glContext.FLOAT, false, stride, 8 * 4);
+
+    glContext.uniform2f(nodeProgram.uniforms.resolution, width, height);
+    glContext.uniform2f(nodeProgram.uniforms.translate, transform.x, transform.y);
+    glContext.uniform1f(nodeProgram.uniforms.zoom, transform.k);
+    glContext.uniform1f(nodeProgram.uniforms.dpr, dpr);
+    glContext.drawArrays(glContext.POINTS, 0, webglRenderer.counts.nodes);
+  }
+
+  function renderWebglScene() {
+    if (!webglRenderer) return;
+
+    syncWebglScene();
+
+    const glContext = webglRenderer.gl;
+    glContext.viewport(0, 0, webglCanvas.width, webglCanvas.height);
+    glContext.clear(glContext.COLOR_BUFFER_BIT);
+
+    if (!subNodes.length) return;
+
+    const hasFocusedNeighborhood = Boolean(focusedNodeId && focusedNeighborIds.size > 0);
+    drawWebglEdges(
+      webglRenderer.buffers.dimEdges,
+      webglRenderer.counts.dimEdges,
+      new Float32Array([0, 0, 0, hasFocusedNeighborhood ? 0.10 : 0.28])
+    );
+    if (hasFocusedNeighborhood) {
+      drawWebglEdges(
+        webglRenderer.buffers.focusEdges,
+        webglRenderer.counts.focusEdges,
+        new Float32Array([0, 0, 0, 0.92])
+      );
+    }
+    drawWebglNodes();
+  }
+
   function zoomWheelDelta(event) {
     const rawDelta = event.deltaMode === 0
       ? -event.deltaY * WHEEL_ZOOM_PIXEL_STEP
       : -Math.sign(event.deltaY || 0) * (event.deltaMode === 1 ? WHEEL_ZOOM_LINE_STEP : WHEEL_ZOOM_PAGE_STEP);
     return Math.max(-WHEEL_ZOOM_DELTA_CLAMP, Math.min(WHEEL_ZOOM_DELTA_CLAMP, rawDelta));
+  }
+
+  function getUrlBlastMode() {
+    return new URLSearchParams(window.location.search).get('view') === 'tooling' ? 'tooling' : 'runtime';
   }
 
   function hideFocusPanel() {
@@ -857,17 +1545,20 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     }, FOCUS_MINIMIZE_MS);
   }
 
-  function syncUrlPackage(pkgId, mode = 'push') {
+  function syncUrlState({ pkgId = selectedId, historyMode = 'push' } = {}) {
+    const currentUrl = new URL(window.location);
+    const currentPkg = currentUrl.searchParams.get('pkg');
+    const currentView = currentUrl.searchParams.get('view') === 'tooling' ? 'tooling' : 'runtime';
+
     const url = new URL(window.location);
-    if (pkgId) {
-      const current = url.searchParams.get('pkg');
-      if (mode === 'push' && current === pkgId) return;
-      url.searchParams.set('pkg', pkgId);
-    } else {
-      if (!url.searchParams.has('pkg')) return;
-      url.searchParams.delete('pkg');
-    }
-    if (mode === 'replace') window.history.replaceState(null, '', url);
+    if (pkgId) url.searchParams.set('pkg', pkgId);
+    else url.searchParams.delete('pkg');
+
+    if (blastMode === 'tooling') url.searchParams.set('view', 'tooling');
+    else url.searchParams.delete('view');
+
+    if (historyMode === 'push' && currentPkg === (pkgId ?? null) && currentView === blastMode) return;
+    if (historyMode === 'replace') window.history.replaceState(null, '', url);
     else window.history.pushState(null, '', url);
   }
 
@@ -875,6 +1566,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     focusedNodeId = null;
     focusedNeighborIds = new Set();
     hideFocusPanel();
+    markWebglDirty({ nodes: true, edges: true });
   }
 
   function setNodeFocus(id) {
@@ -886,12 +1578,13 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     }
     focusedNeighborIds = neighbors;
     showFocusPanel(id);
+    markWebglDirty({ nodes: true, edges: true });
   }
 
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = bgGradient;
-    ctx.fillRect(0, 0, width, height);
+    ctx.clearRect(0, 0, width, height);
+    renderWebglScene();
     if (!subNodes.length) return;
 
     const hasFocusedNeighborhood = Boolean(focusedNodeId && focusedNeighborIds.size > 0);
@@ -899,100 +1592,91 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     const invScale = 1 / transform.k;
     const labelCullPad = showDetailLabels ? 96 * invScale : 18 * invScale;
     const visibleNodeBounds = getWorldBounds(labelCullPad);
-    const visibleLinkBounds = getWorldBounds(24 * invScale);
+    const lw = invScale;
+    const drawableNodes = [];
+
+    for (const n of subNodes) {
+      if (!boundsContainPoint(visibleNodeBounds, n.x, n.y, getNodeRadius(n))) continue;
+      drawableNodes.push(n);
+    }
 
     ctx.save();
     ctx.translate(transform.x, transform.y);
     ctx.scale(transform.k, transform.k);
-    const lw = invScale;
-    const nodeRadius = n => (n.isRoot ? NODE_R * 2 : NODE_R);
-    const drawableNodes = [];
 
-    for (const n of subNodes) {
-      if (!boundsContainPoint(visibleNodeBounds, n.x, n.y, nodeRadius(n))) continue;
-      drawableNodes.push(n);
-    }
+    if (!webglRenderer) {
+      const visibleLinkBounds = getWorldBounds(24 * invScale);
 
-    function strokeTrimmedLinks(strokeStyle, lineWidth, includeLink = () => true) {
-      ctx.beginPath();
-      ctx.strokeStyle = strokeStyle;
-      ctx.lineWidth = lineWidth;
-      for (const l of subLinks) {
-        if (!includeLink(l)) continue;
-        if (!segmentMayBeVisible(visibleLinkBounds, l.source.x, l.source.y, l.target.x, l.target.y)) continue;
-        const dx = l.target.x - l.source.x;
-        const dy = l.target.y - l.source.y;
-        const dist = Math.hypot(dx, dy);
-        if (!dist) continue;
-        const ux = dx / dist;
-        const uy = dy / dist;
-        const sr = nodeRadius(l.source);
-        const tr = nodeRadius(l.target);
-        if (dist <= sr + tr) continue;
-        const x1 = l.source.x + ux * sr;
-        const y1 = l.source.y + uy * sr;
-        const x2 = l.target.x - ux * tr;
-        const y2 = l.target.y - uy * tr;
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
+      function strokeTrimmedLinks(strokeStyle, lineWidth, includeLink = () => true) {
+        ctx.beginPath();
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = lineWidth;
+        for (const l of subLinks) {
+          if (!includeLink(l)) continue;
+          if (!segmentMayBeVisible(visibleLinkBounds, l.source.x, l.source.y, l.target.x, l.target.y)) continue;
+          const dx = l.target.x - l.source.x;
+          const dy = l.target.y - l.source.y;
+          const dist = Math.hypot(dx, dy);
+          if (!dist) continue;
+          const ux = dx / dist;
+          const uy = dy / dist;
+          const sr = getNodeRadius(l.source);
+          const tr = getNodeRadius(l.target);
+          if (dist <= sr + tr) continue;
+          const x1 = l.source.x + ux * sr;
+          const y1 = l.source.y + uy * sr;
+          const x2 = l.target.x - ux * tr;
+          const y2 = l.target.y - uy * tr;
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+        }
+        ctx.stroke();
       }
-      ctx.stroke();
-    }
 
-    // dashed ring guides
-    if (showDetailLabels) {
-      ctx.strokeStyle = 'rgba(0,0,0,0.07)';
-      ctx.lineWidth = lw;
-      ctx.setLineDash([4 * invScale, 7 * invScale]);
-      for (const r of depthRings) {
-        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+      if (!hasFocusedNeighborhood) {
+        strokeTrimmedLinks('rgba(0,0,0,0.28)', lw);
+      } else {
+        strokeTrimmedLinks('rgba(0,0,0,0.10)', lw);
+        strokeTrimmedLinks('#000', lw, l =>
+          l.source.id === focusedNodeId || l.target.id === focusedNodeId
+        );
       }
-      ctx.setLineDash([]);
-    }
 
-    // links
-    if (!hasFocusedNeighborhood) {
-      strokeTrimmedLinks('rgba(0,0,0,0.12)', lw);
-    } else {
-      strokeTrimmedLinks('rgba(0,0,0,0.05)', lw);
-      strokeTrimmedLinks('#000', lw, l =>
-        l.source.id === focusedNodeId || l.target.id === focusedNodeId
-      );
-    }
-
-    // batch nodes by color group — one fill+stroke per group
-    const groups = new Map();
-    for (const n of drawableNodes) {
-      let key = 'pending';
-      if (n.isRoot) key = 'root';
-      else if (n.depth <= revealedUpToDepth) key = n.exposure;
-      const isActive = !hasFocusedNeighborhood || focusedNeighborIds.has(n.id);
-      const groupKey = `${key}|${isActive ? 'active' : 'dim'}`;
-      if (!groups.has(groupKey)) groups.set(groupKey, []);
-      groups.get(groupKey).push(n);
-    }
-    for (const [groupKey, bucket] of groups.entries()) {
-      if (!bucket.length) continue;
-      const [key, state] = groupKey.split('|');
-      const col = COLORS[key];
-      const isRoot = key === 'root';
-      const r2 = isRoot ? NODE_R * 2 : NODE_R;
-      ctx.save();
-      if (state === 'dim') ctx.globalAlpha = 0.22;
-      ctx.lineWidth   = isRoot ? 2.5 / transform.k : lw;
-      ctx.fillStyle   = col.fill;
-      ctx.strokeStyle = col.stroke;
-      ctx.beginPath();
-      for (const n of bucket) { ctx.moveTo(n.x + r2, n.y); ctx.arc(n.x, n.y, r2, 0, Math.PI * 2); }
-      ctx.fill();
-      ctx.stroke();
-      ctx.restore();
+      const groups = new Map();
+      for (const n of drawableNodes) {
+        let key = 'pending';
+        if (n.isRoot) key = 'root';
+        else if (n.depth <= revealedUpToDepth) key = n.exposure;
+        const isActive = !hasFocusedNeighborhood || focusedNeighborIds.has(n.id);
+        const groupKey = `${key}|${isActive ? 'active' : 'dim'}`;
+        if (!groups.has(groupKey)) groups.set(groupKey, []);
+        groups.get(groupKey).push(n);
+      }
+      for (const [groupKey, bucket] of groups.entries()) {
+        if (!bucket.length) continue;
+        const [key, state] = groupKey.split('|');
+        const col = COLORS[key];
+        const radius = key === 'root' ? NODE_R * 2 : NODE_R;
+        ctx.save();
+        if (state === 'dim') ctx.globalAlpha = DIMMED_NODE_ALPHA;
+        ctx.lineWidth   = key === 'root' ? 2.5 / transform.k : lw;
+        ctx.fillStyle   = col.fill;
+        ctx.strokeStyle = col.stroke;
+        ctx.beginPath();
+        for (const n of bucket) {
+          ctx.moveTo(n.x + radius, n.y);
+          ctx.arc(n.x, n.y, radius, 0, Math.PI * 2);
+        }
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
     }
 
     if (hasFocusedNeighborhood) {
       const focusNode = subNodes.find(n => n.id === focusedNodeId);
-      if (focusNode && boundsContainPoint(visibleNodeBounds, focusNode.x, focusNode.y, nodeRadius(focusNode) + 4 * invScale)) {
-        const r = focusNode.isRoot ? NODE_R * 2 : NODE_R;
+      if (focusNode && boundsContainPoint(visibleNodeBounds, focusNode.x, focusNode.y, getNodeRadius(focusNode) + 4 * invScale)) {
+        const r = getNodeRadius(focusNode);
         ctx.lineWidth = 2 / transform.k;
         ctx.strokeStyle = '#2c3e50';
         ctx.beginPath();
@@ -1021,7 +1705,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
         const isActive = !hasFocusedNeighborhood || focusedNeighborIds.has(n.id);
         if (!isActive) continue;
 
-        const r = n.isRoot ? NODE_R * 2 : NODE_R;
+        const r = getNodeRadius(n);
         let lx, ly, align;
 
         if (n.isRoot) {
@@ -1080,15 +1764,17 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   // tooltip — distance-based hit test
   const tooltip = document.getElementById('node-tooltip');
   const expLabel = { auto: 'auto-pull', pinned: 'pinned' };
+
+  function rebuildQuadtree() {
+    if (!subNodes.length) { nodeQuadtree = null; return; }
+    const visible = subNodes.filter(n => n.isRoot || n.depth <= revealedUpToDepth);
+    nodeQuadtree = d3.quadtree().x(n => n.x).y(n => n.y).addAll(visible);
+  }
+
+  // O(log n) hit detection via quadtree instead of O(n) linear scan
   function hitTest(wx, wy) {
-    const thr = (NODE_R * 2.5) ** 2;
-    const bounds = getWorldBounds(NODE_R * 3);
-    for (const n of subNodes) {
-      if (!n.isRoot && n.depth > revealedUpToDepth) continue;
-      if (!boundsContainPoint(bounds, n.x, n.y, NODE_R * 2)) continue;
-      if ((n.x - wx) ** 2 + (n.y - wy) ** 2 < thr) return n;
-    }
-    return null;
+    if (!nodeQuadtree) return null;
+    return nodeQuadtree.find(wx, wy, NODE_R * 2.5) ?? null;
   }
   canvas.addEventListener('mousemove', e => {
     if (!subNodes.length || isGraphInteracting) {
@@ -1099,6 +1785,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     const rect = canvas.getBoundingClientRect();
     const wx = (e.clientX - rect.left - transform.x) / transform.k;
     const wy = (e.clientY - rect.top  - transform.y) / transform.k;
+
     const hit = hitTest(wx, wy);
     if (hit) {
       const exp = hit.isRoot ? 'compromised' : expLabel[hit.exposure] ?? hit.exposure;
@@ -1158,18 +1845,34 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       return;
     }
     if (msg.type === 'ready') {
-      const { sorted, maxSize } = msg;
-      document.getElementById('s-setsize').textContent      = sorted.length;
-      document.getElementById('exp-scope-count').textContent = sorted.length;
-      pkgCountEl.textContent = `Top ${sorted.length} most popular npm packages`;
+      const { runtimeSorted, toolingSorted, maxRuntimeSize, maxToolingSize } = msg;
+      const runtimeSizeByName = new Map(runtimeSorted.map(item => [item.name, item.size]));
+      const toolingSizeByName = new Map(toolingSorted.map(item => [item.name, item.size]));
 
-      _allItems = sorted.map(s => ({
-        name: s.name,
-        size: s.size,
-        pct:  Math.round((s.size / (maxSize || 1)) * 100),
+      _itemsByName = new Map(Object.keys(graph.packages).map(name => {
+        const runtimeSize = runtimeSizeByName.get(name) ?? 0;
+        const toolingSize = toolingSizeByName.get(name) ?? 0;
+        return [name, {
+          name,
+          runtimeSize,
+          toolingSize,
+          runtimePct: Math.round((runtimeSize / (maxRuntimeSize || 1)) * 100),
+          toolingPct: Math.round((toolingSize / (maxToolingSize || 1)) * 100),
+          search: buildSearchMeta(name),
+        }];
       }));
-      _filteredItems = _allItems;
-      renderVisible();
+      _sortedNamesByMode = {
+        runtime: runtimeSorted.map(item => item.name),
+        tooling: toolingSorted.map(item => item.name),
+      };
+      _listReady = true;
+      blastMode = getUrlBlastMode();
+
+      document.getElementById('s-setsize').textContent       = runtimeSorted.length;
+      document.getElementById('exp-scope-count').textContent = runtimeSorted.length;
+      updateListModeControls();
+      updateBlastModeControls();
+      rebuildVisibleItems({ resetScroll: true });
 
       // Now safe to handle the URL param
       const qPkg = new URLSearchParams(window.location.search).get('pkg');
@@ -1177,10 +1880,12 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       return;
     }
     if (msg.type === 'cascade') {
-      if (msg.name !== _pendingSelect) return; // stale — user already clicked elsewhere
+      if (!_pendingSelect || msg.name !== _pendingSelect.name || (msg.mode ?? 'runtime') !== _pendingSelect.mode) {
+        return; // stale — user already clicked elsewhere or switched blast mode
+      }
       _pendingSelect = null;
       const cascade = new Map(Object.entries(msg.cascade));
-      renderCascade(msg.name, cascade);
+      renderCascade(msg.name, cascade, msg.mode ?? 'runtime', msg.links ?? []);
     }
   };
   _msgFn = _handleWorkerMsg;
@@ -1188,8 +1893,10 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
 
   // ── SELECT ────────────────────────────────────────────────────────────────
   function reset({ updateHistory = false, historyMode = 'replace' } = {}) {
-    if (updateHistory) syncUrlPackage(null, historyMode);
+    if (updateHistory) syncUrlState({ pkgId: null, historyMode });
     subNodes = []; subLinks = []; depthRings = [];
+    nodeQuadtree = null;
+    clearWebglScene();
     selectedId = null; selectedCascade = null;
     _renderedRange = { start: -1, end: -1 };
     renderVisible(); // refreshes active class on all items
@@ -1204,10 +1911,10 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   }
 
   function selectPackage(id, { updateHistory = true, historyMode = 'push' } = {}) {
-    if (updateHistory) syncUrlPackage(id, historyMode);
+    if (updateHistory) syncUrlState({ pkgId: id, historyMode });
 
     selectedId = id;
-    _pendingSelect = id;
+    _pendingSelect = { name: id, mode: blastMode };
     scrollToItem(id);
     _renderedRange = { start: -1, end: -1 };
     renderVisible(); // applies active class
@@ -1219,9 +1926,9 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     cancelPendingDraw();
     subNodes = []; subLinks = []; depthRings = [];
     placeholder.style.display = 'none';
+    clearWebglScene();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = bgGradient;
-    ctx.fillRect(0, 0, width, height);
+    ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = '#95a5a6';
     ctx.font = '13px system-ui, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1234,14 +1941,15 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     document.getElementById('s-name').style.color = '#8e44ad';
     document.getElementById('s-version').textContent = n ? `v${n.version}` : '';
     const whatIf = document.getElementById('s-whatif');
-    whatIf.innerHTML = 'What if <code></code> is compromised?';
+    whatIf.innerHTML = `${modeLabel(blastMode)} blast: what if <code></code> is compromised?`;
     whatIf.querySelector('code').textContent = id;
 
-    _worker.postMessage({ type: 'select', name: id });
+    _worker.postMessage({ type: 'select', name: id, mode: blastMode });
   }
 
-  function renderCascade(id, cascade) {
+  function renderCascade(id, cascade, mode = 'runtime', workerLinks = []) {
     const n = nodeMap.get(id);
+    const reverseGraph = mode === 'tooling' ? graph.isDevDependencyOf : graph.isDependencyOf;
     selectedCascade = cascade;
     clearNodeFocus();
     lastNodeClick = { id: null, at: 0 };
@@ -1290,16 +1998,11 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       })
     ];
     const nodeObjMap = new Map(subNodes.map(nd => [nd.id, nd]));
-    const ids = new Set([id, ...cascade.keys()]);
-    subLinks = [];
-    for (const name of ids) {
-      for (const edge of (graph.dependsOn[name] ?? [])) {
-        if (ids.has(edge.name)) {
-          const src = nodeObjMap.get(name), tgt = nodeObjMap.get(edge.name);
-          if (src && tgt) subLinks.push({ source: src, target: tgt });
-        }
-      }
-    }
+    // links pre-built in worker — no O(n×e) work on main thread
+    subLinks = workerLinks
+      .map(([s, t]) => ({ source: nodeObjMap.get(s), target: nodeObjMap.get(t) }))
+      .filter(l => l.source && l.target);
+    markWebglDirty({ nodes: true, edges: true });
 
     const fitScale = Math.min(width, height) * 0.44 / Math.max(prevR + 40, 1);
     fitScaleForCurrentView = fitScale;
@@ -1307,14 +2010,25 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       d3.zoomIdentity.translate(width / 2, height / 2).scale(fitScale));
 
     revealedUpToDepth = 0;
+    rebuildQuadtree();
     placeholder.style.display = 'none';
     requestDraw();
 
     // animate ring by ring
     for (let depth = 1; depth <= maxDepth; depth++) {
-      setTimeout(() => { revealedUpToDepth = depth; requestDraw(); }, depth * 220);
+      setTimeout(() => {
+        revealedUpToDepth = depth;
+        rebuildQuadtree();
+        markWebglDirty({ nodes: true, edges: false });
+        requestDraw();
+      }, depth * 220);
     }
-    setTimeout(() => { revealedUpToDepth = Infinity; requestDraw(); }, (maxDepth + 1) * 220);
+    setTimeout(() => {
+      revealedUpToDepth = Infinity;
+      rebuildQuadtree();
+      markWebglDirty({ nodes: true, edges: false });
+      requestDraw();
+    }, (maxDepth + 1) * 220);
 
     document.getElementById('legend-bar').classList.add('visible');
     document.getElementById('s-version').textContent = n ? `v${n.version}` : '';
@@ -1327,7 +2041,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       `<a href="https://npmgraph.js.org/?q=${encodedId}" target="_blank" rel="noopener">npmgraph ↗</a>` +
       `<a href="https://bundlephobia.com/package/${encodedId}" target="_blank" rel="noopener">bundlephobia ↗</a>`;
 
-    function buildCascadeHopGroups(rootId, cascadeMap) {
+    function buildCascadeHopGroups(rootId, cascadeMap, reverseGraphForMode) {
       const reachable = new Set([rootId, ...cascadeMap.keys()]);
       const parentByNode = new Map();
       const reqByNode = new Map();
@@ -1336,7 +2050,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       // BFS to capture one deterministic parent path per impacted package.
       while (queue.length) {
         const cur = queue.shift();
-        const nextEdges = [...(graph.isDependencyOf[cur] ?? [])]
+        const nextEdges = [...(reverseGraphForMode[cur] ?? [])]
           .filter(edge => reachable.has(edge.name))
           .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -1387,13 +2101,42 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
       return [...hops.values()].sort((a, b) => a.hop - b.hop);
     }
 
-    const cascadeHops = buildCascadeHopGroups(id, cascade);
+    function buildModeReport(reportMode) {
+      const reverseGraphForMode = reportMode === 'tooling' ? graph.isDevDependencyOf : graph.isDependencyOf;
+      const cascadeForMode = simulate(id, reverseGraphForMode);
+      cascadeForMode.delete(id);
+
+      const cascadeEntries = [...cascadeForMode.values()];
+      const modeMaxDepth = Math.max(0, ...cascadeEntries.map(v => v.depth));
+      const modeAutoCount = cascadeEntries.filter(v => v.exposure === 'auto').length;
+      const modePinnedCount = cascadeEntries.filter(v => v.exposure === 'pinned').length;
+      const modeCascadeHops = buildCascadeHopGroups(id, cascadeForMode, reverseGraphForMode);
+
+      return {
+        mode: reportMode,
+        cascadeSize: cascadeForMode.size,
+        maxDepth: modeMaxDepth,
+        exposure: { auto: modeAutoCount, pinned: modePinnedCount },
+        hopSummary: modeCascadeHops.map(({ hop, count, auto, pinned }) => ({
+          hop,
+          count,
+          auto,
+          pinned,
+        })),
+        cascadeHops: modeCascadeHops,
+      };
+    }
+
+    const cascadeHops = buildCascadeHopGroups(id, cascade, reverseGraph);
 
     document.getElementById('dl-json-wrap').innerHTML =
       `<a id="dl-json">⬇ Download cascade JSON</a>`;
 
     document.getElementById('dl-json').addEventListener('click', () => {
+      const runtimeReport = buildModeReport('runtime');
+      const toolingReport = buildModeReport('tooling');
       const report = {
+        mode,
         package: id,
         version: n.version,
         dependents: {
@@ -1411,6 +2154,10 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
           pinned,
         })),
         cascadeHops,
+        modes: {
+          runtime: runtimeReport,
+          tooling: toolingReport,
+        },
       };
       const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -1443,7 +2190,7 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     // ── DYNAMIC EXPLAINER ────────────────────────────────────────────────────────
     // find a real example edge for each exposure type
     const autoEx = [], pinEx = [];
-    for (const edge of (graph.isDependencyOf[id] ?? [])) {
+    for (const edge of (reverseGraph[id] ?? [])) {
       if (!cascade.has(edge.name)) continue;
       const t = exposureType(edge.requirement);
       const entry = { name: edge.name, req: edge.requirement ?? '*' };
@@ -1501,6 +2248,8 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
   }
 
   window.addEventListener('popstate', () => {
+    const view = getUrlBlastMode();
+    setBlastMode(view, { rerenderSelection: false, updateHistory: false });
     const pkg = new URLSearchParams(window.location.search).get('pkg');
     if (pkg && nodeMap.has(pkg)) {
       selectPackage(pkg, { updateHistory: false });
