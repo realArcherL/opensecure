@@ -10,6 +10,7 @@
     "seed": "node dist/seed.js",
     "fetch": "node dist/fetch.js",
     "graph": "node dist/graph.js",
+    "precompute": "node dist/precompute.js",
     "simulate": "node dist/simulate.js",
     "simulate:all": "node dist/simulate.js --all",
     "postinstall": "mkdir -p lib && cp node_modules/d3/dist/d3.min.js lib/d3.v7.min.js",

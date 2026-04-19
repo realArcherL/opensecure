@@ -41,17 +41,24 @@ jobs:
         id: cache
         uses: actions/cache/restore@v4
         with:
-          path: data/graph.json
+          path: |
+            data/graph.json
+            data/sizes.json
           key: graph-data-
           restore-keys: graph-data-
 
-      - name: Verify graph.json exists
+      - name: Verify data files exist
         run: |
           if [ ! -f data/graph.json ]; then
             echo "::error::No cached graph.json found. Run the 'Build data & deploy to Pages' workflow first."
             exit 1
           fi
+          if [ ! -f data/sizes.json ]; then
+            echo "::error::No cached sizes.json found. Run the 'Build data & deploy to Pages' workflow first."
+            exit 1
+          fi
           echo "✅ graph.json restored ($(wc -c < data/graph.json) bytes)"
+          echo "✅ sizes.json restored ($(wc -c < data/sizes.json) bytes)"
 
       # ── 3. Assemble deploy artifact ────────────────────────────────────────
       - name: Prepare site directory
@@ -59,6 +66,7 @@ jobs:
           mkdir -p _site/data _site/lib
           cp index.html _site/
           cp data/graph.json _site/data/
+          cp data/sizes.json _site/data/
           cp -R lib/. _site/lib/
 
       # ── 4. Upload & deploy ─────────────────────────────────────────────────

@@ -56,11 +56,16 @@ jobs:
       - name: Build graph
         run: npm run graph
 
-      # ── 5b. Cache graph.json so the UI-only workflow can reuse it ──────────
+      - name: Pre-compute cascade sizes
+        run: npm run precompute
+
+      # ── 5b. Cache graph.json + sizes.json so the UI-only workflow can reuse them ──
       - name: Cache graph data for UI deploys
         uses: actions/cache/save@v4
         with:
-          path: data/graph.json
+          path: |
+            data/graph.json
+            data/sizes.json
           key: graph-data-${{ github.run_id }}
 
       # ── 6. Assemble deploy artifact ────────────────────────────────────────
@@ -70,6 +75,7 @@ jobs:
           mkdir -p _site/data _site/lib
           cp index.html _site/
           cp data/graph.json _site/data/
+          cp data/sizes.json _site/data/
           cp -R lib/. _site/lib/
 
       # ── 7. Upload & deploy ─────────────────────────────────────────────────

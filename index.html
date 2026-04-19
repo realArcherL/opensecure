@@ -491,6 +491,24 @@
     #scope-popup strong { color: var(--text-strong); font-size: 11px; display: block; margin-bottom: 6px; }
     #scope-popup ul { margin: 0; padding-left: 14px; }
     #scope-popup li { margin-bottom: 4px; }
+    #graph-attribution {
+      position: absolute;
+      left: 50%;
+      bottom: 8px;
+      transform: translateX(-50%);
+      font-size: 9px;
+      color: var(--text-soft);
+      z-index: 4;
+      pointer-events: auto;
+      white-space: nowrap;
+    }
+    #graph-attribution a {
+      color: var(--link-ink);
+      text-decoration: none;
+    }
+    #graph-attribution a:hover {
+      text-decoration: underline;
+    }
 
 
   </style>
@@ -580,6 +598,9 @@
     </div>
   </div>
 
+  <div id="graph-attribution">
+    Analytics by <a href="https://umami.is" target="_blank" rel="noopener">Umami</a>
+  </div>
 </div>
 
 <div id="node-tooltip"></div>
@@ -659,63 +680,37 @@ const _worker = (() => {
     const exposureType = ${exposureType.toString()};
     const simulate     = ${simulate.toString()};
 
-    let _g = null, _names = [], _runtimeSizes = {}, _toolingSizes = {};
+    let _g = null, _names = [];
+    let _pendingSelect = null;
+
+    function handleSelect(msg) {
+      const { name, mode = 'runtime' } = msg;
+      const reverseGraph = mode === 'tooling' ? _g.isDevDependencyOf : _g.isDependencyOf;
+      const forwardGraph = mode === 'tooling' ? _g.devDependsOn      : _g.dependsOn;
+      const infected = simulate(name, reverseGraph);
+      infected.delete(name);
+      const cascade = {};
+      for (const [k, v] of infected) cascade[k] = v;
+      const reachable = new Set([name, ...Object.keys(cascade)]);
+      const links = [];
+      for (const nodeName of reachable) {
+        for (const edge of (forwardGraph[nodeName] ?? [])) {
+          if (reachable.has(edge.name)) links.push([nodeName, edge.name]);
+        }
+      }
+      self.postMessage({ type: 'cascade', name, cascade, mode, links });
+    }
 
     self.onmessage = ({ data: msg }) => {
-      if (msg.type === 'start') {
-        fetch(msg.url).then(r => r.json()).then(graph => {
-          _g     = graph;
-          _names = Object.keys(_g.packages);
-          let maxRuntimeSz = 0, maxToolingSz = 0, done = 0;
-          for (const name of _names) {
-            const runtimeCascade = simulate(name, _g.isDependencyOf);
-            runtimeCascade.delete(name);
-            _runtimeSizes[name] = runtimeCascade.size;
-            if (_runtimeSizes[name] > maxRuntimeSz) maxRuntimeSz = _runtimeSizes[name];
-
-            const toolingCascade = simulate(name, _g.isDevDependencyOf);
-            toolingCascade.delete(name);
-            _toolingSizes[name] = toolingCascade.size;
-            if (_toolingSizes[name] > maxToolingSz) maxToolingSz = _toolingSizes[name];
-
-            if (++done % 250 === 0 || done === _names.length)
-              self.postMessage({ type: 'progress', done, total: _names.length });
-          }
-          const sortBySize = (sizes) => [..._names]
-            .sort((a, b) =>
-              sizes[b] - sizes[a] ||
-              (_g.packages[b].totalDependents ?? 0) - (_g.packages[a].totalDependents ?? 0) ||
-              a.localeCompare(b)
-            )
-            .map(n => ({ name: n, size: sizes[n] }));
-          self.postMessage({
-            type: 'ready',
-            runtimeSorted: sortBySize(_runtimeSizes),
-            toolingSorted: sortBySize(_toolingSizes),
-            maxRuntimeSize: maxRuntimeSz,
-            maxToolingSize: maxToolingSz,
-          });
-        });
+      if (msg.type === 'init') {
+        _g     = msg.graph;
+        _names = Object.keys(_g.packages);
+        if (_pendingSelect) { handleSelect(_pendingSelect); _pendingSelect = null; }
         return;
       }
       if (msg.type === 'select') {
-        const { name, mode = 'runtime' } = msg;
-        const reverseGraph = mode === 'tooling' ? _g.isDevDependencyOf : _g.isDependencyOf;
-        const forwardGraph = mode === 'tooling' ? _g.devDependsOn      : _g.dependsOn;
-        const infected = simulate(name, reverseGraph);
-        infected.delete(name);
-        // serialise Map -> plain object (Maps aren't structured-cloneable as Maps)
-        const cascade = {};
-        for (const [k, v] of infected) cascade[k] = v;
-        // build edge list off the main thread — avoids O(n×e) work on render
-        const reachable = new Set([name, ...Object.keys(cascade)]);
-        const links = [];
-        for (const nodeName of reachable) {
-          for (const edge of (forwardGraph[nodeName] ?? [])) {
-            if (reachable.has(edge.name)) links.push([nodeName, edge.name]);
-          }
-        }
-        self.postMessage({ type: 'cascade', name, cascade, mode, links });
+        if (!_g) { _pendingSelect = msg; return; }
+        handleSelect(msg);
       }
     };
   `;
@@ -724,26 +719,27 @@ const _worker = (() => {
   );
 })();
 
-// Tell worker to fetch its own copy in parallel — no graph clone across threads.
-// Blob-URL workers need an absolute URL since relative paths resolve against blob:.
-_worker.postMessage({ type: 'start', url: new URL('data/graph.json', location.href).href });
-
-// Buffer worker messages that arrive before the main-thread fetch resolves.
-// (Rare in practice — BFS takes longer than a fetch — but correct either way.)
 const _msgBuf = [];
 let _msgFn = null;
 _worker.addEventListener('message', ({ data: msg }) => {
   if (_msgFn) _msgFn(msg); else _msgBuf.push(msg);
 });
 
-fetch('data/graph.json').then(r => r.json()).then(graph => {
-  const pkgCountEl = document.getElementById('pkg-count');
-  pkgCountEl.textContent = 'Analysing packages…';
-
-  // nodeMap for metadata lookups only — nothing is rendered until a package is selected
-  const nodeMap = new Map(
-    Object.keys(graph.packages).map(name => [name, { id: name, ...graph.packages[name] }])
+// graph.json loaded in background; passed to worker and used for rendering after user selects
+let graph = null;
+let nodeMap = new Map();
+const _graphPromise = fetch('data/graph.json').then(r => r.json()).then(g => {
+  graph = g;
+  nodeMap = new Map(
+    Object.keys(g.packages).map(name => [name, { id: name, ...g.packages[name] }])
   );
+  _worker.postMessage({ type: 'init', graph: g });
+  return g;
+});
+
+// sizes.json is pre-computed (72KB vs 926KB) — loads ~13x faster, shows list immediately
+fetch('data/sizes.json').then(r => r.json()).then(sizes => {
+  const pkgCountEl = document.getElementById('pkg-count');
 
   // ── VIRTUAL SCROLL SIDEBAR ──────────────────────────────────────────────────
   const listEl      = document.getElementById('threat-list');
@@ -1849,51 +1845,45 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     requestDraw();
   });
 
-  // ── WORKER MESSAGE HANDLER ──────────────────────────────────────────────────
+  // ── LIST INITIALISATION from pre-computed sizes ─────────────────────────────
   let _pendingSelect = null;
+  {
+    const { runtimeSorted, toolingSorted, maxRuntimeSize, maxToolingSize } = sizes;
+    const runtimeSizeByName = new Map(runtimeSorted.map(item => [item.name, item.size]));
+    const toolingSizeByName = new Map(toolingSorted.map(item => [item.name, item.size]));
 
-  // Activate the handler and flush anything buffered while main fetch was in flight
+    _itemsByName = new Map(runtimeSorted.map(({ name }) => {
+      const runtimeSize = runtimeSizeByName.get(name) ?? 0;
+      const toolingSize = toolingSizeByName.get(name) ?? 0;
+      return [name, {
+        name,
+        runtimeSize,
+        toolingSize,
+        runtimePct: Math.round((runtimeSize / (maxRuntimeSize || 1)) * 100),
+        toolingPct: Math.round((toolingSize / (maxToolingSize || 1)) * 100),
+        search: buildSearchMeta(name),
+      }];
+    }));
+    _sortedNamesByMode = {
+      runtime: runtimeSorted.map(item => item.name),
+      tooling: toolingSorted.map(item => item.name),
+    };
+    _listReady = true;
+    blastMode = getUrlBlastMode();
+
+    document.getElementById('s-setsize').textContent       = runtimeSorted.length;
+    document.getElementById('exp-scope-count').textContent = runtimeSorted.length;
+    updateListModeControls();
+    updateBlastModeControls();
+    rebuildVisibleItems({ resetScroll: true });
+
+    // URL param select deferred until graph.json (nodeMap) is ready
+    const qPkg = new URLSearchParams(window.location.search).get('pkg');
+    if (qPkg) _graphPromise.then(() => { if (nodeMap.has(qPkg)) selectPackage(qPkg, { updateHistory: false }); });
+  }
+
+  // ── WORKER MESSAGE HANDLER ──────────────────────────────────────────────────
   const _handleWorkerMsg = (msg) => {
-    if (msg.type === 'progress') {
-      const pct = Math.round(msg.done / msg.total * 100);
-      pkgCountEl.textContent = `Analysing… ${pct}%`;
-      return;
-    }
-    if (msg.type === 'ready') {
-      const { runtimeSorted, toolingSorted, maxRuntimeSize, maxToolingSize } = msg;
-      const runtimeSizeByName = new Map(runtimeSorted.map(item => [item.name, item.size]));
-      const toolingSizeByName = new Map(toolingSorted.map(item => [item.name, item.size]));
-
-      _itemsByName = new Map(Object.keys(graph.packages).map(name => {
-        const runtimeSize = runtimeSizeByName.get(name) ?? 0;
-        const toolingSize = toolingSizeByName.get(name) ?? 0;
-        return [name, {
-          name,
-          runtimeSize,
-          toolingSize,
-          runtimePct: Math.round((runtimeSize / (maxRuntimeSize || 1)) * 100),
-          toolingPct: Math.round((toolingSize / (maxToolingSize || 1)) * 100),
-          search: buildSearchMeta(name),
-        }];
-      }));
-      _sortedNamesByMode = {
-        runtime: runtimeSorted.map(item => item.name),
-        tooling: toolingSorted.map(item => item.name),
-      };
-      _listReady = true;
-      blastMode = getUrlBlastMode();
-
-      document.getElementById('s-setsize').textContent       = runtimeSorted.length;
-      document.getElementById('exp-scope-count').textContent = runtimeSorted.length;
-      updateListModeControls();
-      updateBlastModeControls();
-      rebuildVisibleItems({ resetScroll: true });
-
-      // Now safe to handle the URL param
-      const qPkg = new URLSearchParams(window.location.search).get('pkg');
-      if (qPkg && nodeMap.has(qPkg)) selectPackage(qPkg, { updateHistory: false });
-      return;
-    }
     if (msg.type === 'cascade') {
       if (!_pendingSelect || msg.name !== _pendingSelect.name || (msg.mode ?? 'runtime') !== _pendingSelect.mode) {
         return; // stale — user already clicked elsewhere or switched blast mode
@@ -2273,8 +2263,6 @@ fetch('data/graph.json').then(r => r.json()).then(graph => {
     }
   });
 
-  // Note: URL param selection now happens inside _worker.onmessage 'ready' handler
-  // to avoid calling selectPackage before the package list is available.
 });
 </script>
 </body>
